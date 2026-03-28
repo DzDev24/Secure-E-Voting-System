@@ -67,9 +67,11 @@ ProjectDB/
 ├── voter_client_gui.py    # [BONUS] Tkinter GUI client
 ├── admin_setup.py         # Generate all keys, register voters & candidates
 ├── data/
-│   ├── server_keys.json   # Server RSA key pair
-│   ├── voters.json        # Voter registry {id → name, public_key, private_key}
-│   └── candidates.json    # Candidate list
+│   ├── server_keys.json        # Server RSA key pair
+│   ├── voters.json             # Voter registry {id → name, public_key}
+│   ├── voter_private_keys.json # Client-side private keys (not loaded by server)
+│   ├── candidates.json         # Candidate list
+│   └── results.json            # Persisted tally & voted_ids
 ├── tests/
 │   ├── test_crypto.py     # Unit tests for crypto_utils
 │   └── test_integration.py# End-to-end voting flow tests
@@ -86,13 +88,18 @@ ProjectDB/
 python admin_setup.py
 ```
 
-Enter the number of candidates and voters when prompted.
+Enter the number of candidates and voters when prompted. The script saves:
+- `server_keys.json` (server public/private key pair)
+- `voters.json` (public registry only)
+- `voter_private_keys.json` (per-voter private keys; distribute securely to clients)
+- `candidates.json` (candidate names)
 
 ### 2. Start the server
 
 ```bash
 python voting_server.py
 ```
+The server will also persist `results.json` (tally + voted_ids) so restarts do not allow double voting.
 
 ### 3. Cast a vote (CLI)
 

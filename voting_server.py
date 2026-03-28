@@ -34,6 +34,7 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 SERVER_KEYS_FILE = os.path.join(DATA_DIR, "server_keys.json")
 VOTERS_FILE = os.path.join(DATA_DIR, "voters.json")
 CANDIDATES_FILE = os.path.join(DATA_DIR, "candidates.json")
+RESULTS_FILE = os.path.join(DATA_DIR, "results.json")
 
 HOST = "localhost"
 PORT = 5555
@@ -107,6 +108,16 @@ class VotingServer:
         # State
         self.tally = {c: 0 for c in self.candidates}
         self.voted_ids: set = set()
+        if os.path.exists(RESULTS_FILE):
+            try:
+                prior = _load_json(RESULTS_FILE, "Results file")
+                stored_tally = prior.get("tally", {})
+                for candidate in self.tally:
+                    self.tally[candidate] = stored_tally.get(candidate, 0)
+                self.voted_ids = set(prior.get("voted_ids", []))
+            except FileNotFoundError:
+                # If removed between exists check and load, fall back to defaults
+                pass
         self._lock = threading.Lock()
         self._running = True
         self._server_sock = None
@@ -208,6 +219,7 @@ class VotingServer:
             # 6. Tally
             self.tally[candidate_name] += 1
             self.voted_ids.add(voter_id)
+            self._persist_state()
 
         return {"status": "accepted", "message": "Vote recorded successfully."}
 
@@ -226,6 +238,13 @@ class VotingServer:
 
     def _print_results(self) -> None:
         print("\n" + self._results_str())
+
+    def _persist_state(self) -> None:
+        """Persist tally and voted IDs to disk to survive restarts."""
+        snapshot = {"tally": self.tally, "voted_ids": list(self.voted_ids)}
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(RESULTS_FILE, "w") as fh:
+            json.dump(snapshot, fh, indent=2)
 
 
 # ---------------------------------------------------------------------------

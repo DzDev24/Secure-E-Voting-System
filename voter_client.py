@@ -24,6 +24,7 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 SERVER_KEYS_FILE = os.path.join(DATA_DIR, "server_keys.json")
 VOTERS_FILE = os.path.join(DATA_DIR, "voters.json")
 CANDIDATES_FILE = os.path.join(DATA_DIR, "candidates.json")
+VOTER_PRIVATES_FILE = os.path.join(DATA_DIR, "voter_private_keys.json")
 
 HOST = "localhost"
 PORT = 5555
@@ -91,12 +92,15 @@ def cast_vote(voter_id: str, candidate_name: str) -> dict:
     server_data = _load_json(SERVER_KEYS_FILE, "Server keys file")
     server_pub = server_data["public_key"]
 
-    voters = _load_json(VOTERS_FILE, "Voter registry")
+    voters = _load_json(VOTERS_FILE, "Voter registry (public keys)")
+    voter_privs = _load_json(VOTER_PRIVATES_FILE, "Voter private key store")
 
     if voter_id not in voters:
         raise KeyError(f"Voter ID '{voter_id}' not found in registry.")
+    if voter_id not in voter_privs:
+        raise KeyError(f"Private key for voter ID '{voter_id}' not found.")
 
-    voter_priv = voters[voter_id]["private_key"]
+    voter_priv = voter_privs[voter_id]["private_key"]
 
     # Encrypt & sign
     plaintext_int = text_to_int(candidate_name)
