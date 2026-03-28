@@ -24,6 +24,7 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 SERVER_KEYS_FILE = os.path.join(DATA_DIR, "server_keys.json")
 VOTERS_FILE = os.path.join(DATA_DIR, "voters.json")
 CANDIDATES_FILE = os.path.join(DATA_DIR, "candidates.json")
+VOTER_PRIVATES_FILE = os.path.join(DATA_DIR, "voter_private_keys.json")
 
 HOST = "localhost"
 PORT = 5555
@@ -57,6 +58,17 @@ def _recv_exact(sock: socket.socket, n: int) -> bytes:
     return buf
 
 
+def _load_json(path: str, label: str):
+    """Load JSON file or raise a helpful error if missing."""
+    try:
+        with open(path) as fh:
+            return json.load(fh)
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(
+            f"{label} not found at {path}. Run admin_setup.py first."
+        ) from exc
+
+
 # ---------------------------------------------------------------------------
 # Core vote-casting logic (also used by the GUI)
 # ---------------------------------------------------------------------------
@@ -73,20 +85,22 @@ def cast_vote(voter_id: str, candidate_name: str) -> dict:
 
     Raises:
         KeyError: If the voter ID is not in the local registry.
+        FileNotFoundError: If required data files are missing.
         ConnectionRefusedError: If the server is not reachable.
     """
     # Load keys
-    with open(SERVER_KEYS_FILE) as fh:
-        server_data = json.load(fh)
+    server_data = _load_json(SERVER_KEYS_FILE, "Server keys file")
     server_pub = server_data["public_key"]
 
-    with open(VOTERS_FILE) as fh:
-        voters = json.load(fh)
+    voters = _load_json(VOTERS_FILE, "Voter registry (public keys)")
+    voter_privs = _load_json(VOTER_PRIVATES_FILE, "Voter private key store")
 
     if voter_id not in voters:
         raise KeyError(f"Voter ID '{voter_id}' not found in registry.")
+    if voter_id not in voter_privs:
+        raise KeyError(f"Private key for voter ID '{voter_id}' not found.")
 
-    voter_priv = voters[voter_id]["private_key"]
+    voter_priv = voter_privs[voter_id]["private_key"]
 
     # Encrypt & sign
     plaintext_int = text_to_int(candidate_name)
@@ -131,8 +145,11 @@ def _cli() -> None:
         print("[!] No voter ID entered. Exiting.")
         return
 
-    with open(CANDIDATES_FILE) as fh:
-        candidates = json.load(fh)
+    try:
+        candidates = _load_json(CANDIDATES_FILE, "Candidates file")
+    except FileNotFoundError as exc:
+        print(f"[!] {exc}")
+        return
 
     print("\nAvailable candidates:")
     for idx, name in enumerate(candidates, start=1):
@@ -152,6 +169,9 @@ def _cli() -> None:
     try:
         response = cast_vote(voter_id, candidate_name)
     except KeyError as exc:
+        print(f"[!] {exc}")
+        return
+    except FileNotFoundError as exc:
         print(f"[!] {exc}")
         return
     except ConnectionRefusedError:

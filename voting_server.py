@@ -34,6 +34,7 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 SERVER_KEYS_FILE = os.path.join(DATA_DIR, "server_keys.json")
 VOTERS_FILE = os.path.join(DATA_DIR, "voters.json")
 CANDIDATES_FILE = os.path.join(DATA_DIR, "candidates.json")
+RESULTS_FILE = os.path.join(DATA_DIR, "results.json")
 
 HOST = "localhost"
 PORT = 5555
@@ -70,6 +71,17 @@ def _recv_exact(sock: socket.socket, n: int) -> bytes:
     return buf
 
 
+def _load_json(path: str, label: str):
+    """Load JSON file or raise a helpful error if missing."""
+    try:
+        with open(path) as fh:
+            return json.load(fh)
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(
+            f"{label} not found at {path}. Run admin_setup.py first."
+        ) from exc
+
+
 # ---------------------------------------------------------------------------
 # Server
 # ---------------------------------------------------------------------------
@@ -81,20 +93,31 @@ class VotingServer:
         self.host = host
         self.port = port
 
+        if not os.path.isdir(DATA_DIR):
+            raise FileNotFoundError(
+                f"Data directory not found at {DATA_DIR}. Run admin_setup.py first."
+            )
+
         # Load persisted data
-        with open(SERVER_KEYS_FILE) as fh:
-            keys = json.load(fh)
+        keys = _load_json(SERVER_KEYS_FILE, "Server keys file")
         self.server_priv = keys["private_key"]
 
-        with open(VOTERS_FILE) as fh:
-            self.voters = json.load(fh)
-
-        with open(CANDIDATES_FILE) as fh:
-            self.candidates = json.load(fh)
+        self.voters = _load_json(VOTERS_FILE, "Voter registry")
+        self.candidates = _load_json(CANDIDATES_FILE, "Candidates file")
 
         # State
         self.tally = {c: 0 for c in self.candidates}
         self.voted_ids: set = set()
+        if os.path.exists(RESULTS_FILE):
+            try:
+                prior = _load_json(RESULTS_FILE, "Results file")
+                stored_tally = prior.get("tally", {})
+                for candidate in self.tally:
+                    self.tally[candidate] = stored_tally.get(candidate, 0)
+                self.voted_ids = set(prior.get("voted_ids", []))
+            except (FileNotFoundError, json.JSONDecodeError):
+                # If the file disappears or is malformed, fall back to fresh state.
+                pass
         self._lock = threading.Lock()
         self._running = True
         self._server_sock = None
@@ -196,6 +219,7 @@ class VotingServer:
             # 6. Tally
             self.tally[candidate_name] += 1
             self.voted_ids.add(voter_id)
+            self._persist_state()
 
         return {"status": "accepted", "message": "Vote recorded successfully."}
 
@@ -215,15 +239,23 @@ class VotingServer:
     def _print_results(self) -> None:
         print("\n" + self._results_str())
 
+    def _persist_state(self) -> None:
+        """Persist tally and voted IDs to disk to survive restarts."""
+        snapshot = {"tally": self.tally, "voted_ids": list(self.voted_ids)}
+        with open(RESULTS_FILE, "w") as fh:
+            json.dump(snapshot, fh, indent=2)
+
 
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    server = VotingServer()
     try:
+        server = VotingServer()
         server.start()
+    except FileNotFoundError as exc:
+        print(f"[!] {exc}")
     except KeyboardInterrupt:
         print("\n[!] Server interrupted by user.")
         server.stop()
