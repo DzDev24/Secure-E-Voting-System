@@ -123,7 +123,12 @@ def generate_keypair(bits: int = 512):
         Tuple (public_key, private_key) where each key is a dict with keys
         ``e`` (or ``d``) and ``n``.
     """
-    e = 65537  # Standard public exponent
+    # RSA security relies on the computational difficulty of factoring
+    # n = p * q.  The public exponent e and private exponent d form a
+    # mathematical trapdoor: encryption with e is fast, but reversing
+    # it without d is as hard as factoring n (Confusion).
+    e = 65537  # 2^16 + 1 — standard choice; its low Hamming weight
+               # makes modular exponentiation fast while staying secure.
 
     while True:
         p = generate_prime(bits)
@@ -147,6 +152,11 @@ def generate_keypair(bits: int = 512):
 
 def encrypt(message_int: int, pub_key: dict) -> int:
     """RSA-encrypt an integer: C = M^e mod n.
+
+    This operation provides **Confusion** (confidentiality): the modular
+    exponentiation scrambles the plaintext into an unrecognizable
+    ciphertext.  Only the holder of the matching private key can reverse
+    it.  An eavesdropper on the network sees only the ciphertext.
 
     Args:
         message_int: Plaintext as a non-negative integer (must be < n).
@@ -207,6 +217,12 @@ def int_to_text(number: int) -> str:
 def sha256_hash(data) -> int:
     """Compute SHA-256 of *data* and return the digest as an integer.
 
+    SHA-256 is the **Diffusion** engine of this system: even a 1-bit
+    change in the input (e.g., altering the encrypted vote) produces a
+    completely different 256-bit digest.  This avalanche property is
+    critical for integrity — it makes forging or modifying a signed vote
+    immediately detectable.
+
     Args:
         data: Integer or string to hash.
 
@@ -227,6 +243,12 @@ def sha256_hash(data) -> int:
 
 def sign(message_int: int, priv_key: dict) -> int:
     """Sign a message: S = hash(message)^d mod n.
+
+    We hash first (Diffusion), then encrypt the hash with the private
+    key (Confusion).  Hashing ensures that any tampering with the
+    original message changes the digest and therefore invalidates the
+    signature.  Signing with the private key proves authenticity and
+    provides non-repudiation — the voter cannot deny having sent it.
 
     Args:
         message_int: The message (or ciphertext) to sign, as an integer.

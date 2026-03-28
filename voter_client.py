@@ -133,6 +133,34 @@ def close_election() -> dict:
         return recv_msg(sock)
 
 
+def get_results() -> dict:
+    """Fetch the current tally from the server without closing the election.
+
+    Returns:
+        Server response dict with ``tally`` and ``total_votes`` keys.
+    """
+    with socket.create_connection((HOST, PORT), timeout=10) as sock:
+        send_msg(sock, {"action": "get_results"})
+        return recv_msg(sock)
+
+
+def reset_votes():
+    """Delete the results file to clear vote tallies and voted-ID records."""
+    path = os.path.join(DATA_DIR, "results.json")
+    if os.path.exists(path):
+        os.remove(path)
+
+
+def reset_all():
+    """Delete all data files (keys, voters, candidates, results).
+
+    After calling this, ``admin_setup.py`` must be run again.
+    """
+    import shutil
+    if os.path.isdir(DATA_DIR):
+        shutil.rmtree(DATA_DIR)
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------

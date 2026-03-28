@@ -144,6 +144,7 @@ class VotingServer:
             t.start()
 
         self._server_sock.close()
+        self._persist_state()
         self._print_results()
 
     def stop(self) -> None:
@@ -174,6 +175,15 @@ class VotingServer:
                 send_msg(conn, {"status": "closed", "message": self._results_str()})
                 return
 
+            if action == "get_results":
+                with self._lock:
+                    tally = dict(self.tally)
+                    total = sum(tally.values())
+                send_msg(conn, {
+                    "status": "ok", "tally": tally, "total_votes": total,
+                })
+                return
+
             if action == "vote":
                 response = self._process_vote(msg)
                 send_msg(conn, response)
@@ -182,6 +192,11 @@ class VotingServer:
             send_msg(conn, {"status": "rejected", "message": "Unknown action."})
 
     def _process_vote(self, msg: dict) -> dict:
+        """Process a vote in two separated phases for relative anonymity.
+
+        Phase 1 (Identity):  verifies WHO is voting — never inspects the ballot.
+        Phase 2 (Counting):  reveals WHAT was voted — never sees voter identity.
+        """
         voter_id = msg.get("voter_id", "")
         encrypted_vote = msg.get("encrypted_vote")
         signature = msg.get("signature")
@@ -189,36 +204,68 @@ class VotingServer:
         if not voter_id or encrypted_vote is None or signature is None:
             return {"status": "rejected", "message": "Malformed vote packet."}
 
-        # 1. Identity check
+        # ── PHASE 1: Identity Verification (knows WHO, not WHAT) ─────
+        # The encrypted vote is treated as an opaque ciphertext blob;
+        # its content is never inspected or decrypted during this phase.
+
+        # 1. Identity check — retrieve the voter's public key
         voter_record = self.voters.get(voter_id)
         if voter_record is None:
             return {"status": "rejected", "message": "Unknown voter ID."}
 
         voter_pub = voter_record["public_key"]
 
-        # 2. Signature verification
+        # 2. Signature verification — confirms authenticity and integrity
         if not verify(encrypted_vote, signature, voter_pub):
             return {"status": "rejected", "message": "Invalid signature."}
 
+        # 3. Anti-duplicate — ensure this voter has not already voted
         with self._lock:
-            # 3. Duplicate vote check
             if voter_id in self.voted_ids:
                 return {"status": "rejected", "message": "Voter has already voted."}
+            self.voted_ids.add(voter_id)  # tentatively mark as voted
 
-            # 4. Decrypt the vote
+        # ── PHASE 2: Anonymous Ballot Counting (knows WHAT, not WHO) ─
+        # voter_id is deliberately NOT forwarded to the counting method.
+        # This separation ensures the tallying logic cannot correlate a
+        # ballot with any specific voter, providing relative anonymity.
+
+        result = self._count_ballot(encrypted_vote)
+
+        # Roll back if counting failed so the voter may retry
+        if result["status"] != "accepted":
+            with self._lock:
+                self.voted_ids.discard(voter_id)
+
+        return result
+
+    def _count_ballot(self, encrypted_vote: int) -> dict:
+        """Decrypt and tally a single ballot WITHOUT any voter identity.
+
+        This method is intentionally isolated from voter identification
+        to uphold relative anonymity: the counting step cannot determine
+        who cast this particular ballot.
+
+        Args:
+            encrypted_vote: RSA-encrypted candidate name (ciphertext int).
+
+        Returns:
+            Response dict with ``status`` and ``message`` keys.
+        """
+        with self._lock:
+            # 4. Decrypt — M = C^d mod n using the server's private key
             try:
                 plaintext_int = decrypt(encrypted_vote, self.server_priv)
                 candidate_name = int_to_text(plaintext_int)
             except Exception:
                 return {"status": "rejected", "message": "Decryption failed."}
 
-            # 5. Validate candidate
+            # 5. Validate candidate name against the registered list
             if candidate_name not in self.candidates:
                 return {"status": "rejected", "message": "Invalid candidate."}
 
-            # 6. Tally
+            # 6. Tally — increment the anonymous candidate counter
             self.tally[candidate_name] += 1
-            self.voted_ids.add(voter_id)
             self._persist_state()
 
         return {"status": "accepted", "message": "Vote recorded successfully."}
@@ -251,6 +298,7 @@ class VotingServer:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    server = None
     try:
         server = VotingServer()
         server.start()
@@ -258,4 +306,5 @@ if __name__ == "__main__":
         print(f"[!] {exc}")
     except KeyboardInterrupt:
         print("\n[!] Server interrupted by user.")
-        server.stop()
+        if server is not None:
+            server.stop()
