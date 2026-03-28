@@ -2,7 +2,7 @@
 admin_setup.py – One-time election setup script.
 
 Run this script before starting the election to:
-  1. Generate an RSA key pair for the server (default 2048-bit modulus).
+  1. Generate an RSA key pair for the server (default ~2048-bit modulus from two 1024-bit primes).
   2. Generate RSA key pairs for each registered voter (public registry + client-only privates).
   3. Save the candidate list.
 

@@ -115,8 +115,8 @@ class VotingServer:
                 for candidate in self.tally:
                     self.tally[candidate] = stored_tally.get(candidate, 0)
                 self.voted_ids = set(prior.get("voted_ids", []))
-            except FileNotFoundError:
-                # If removed between exists check and load, fall back to defaults
+            except (FileNotFoundError, json.JSONDecodeError):
+                # If the file disappears or is malformed, fall back to fresh state.
                 pass
         self._lock = threading.Lock()
         self._running = True
@@ -242,7 +242,6 @@ class VotingServer:
     def _persist_state(self) -> None:
         """Persist tally and voted IDs to disk to survive restarts."""
         snapshot = {"tally": self.tally, "voted_ids": list(self.voted_ids)}
-        os.makedirs(DATA_DIR, exist_ok=True)
         with open(RESULTS_FILE, "w") as fh:
             json.dump(snapshot, fh, indent=2)
 
