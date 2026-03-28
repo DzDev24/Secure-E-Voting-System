@@ -70,6 +70,17 @@ def _recv_exact(sock: socket.socket, n: int) -> bytes:
     return buf
 
 
+def _load_json(path: str, label: str):
+    """Load JSON file or raise a helpful error if missing."""
+    try:
+        with open(path) as fh:
+            return json.load(fh)
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(
+            f"{label} not found at {path}. Run admin_setup.py first."
+        ) from exc
+
+
 # ---------------------------------------------------------------------------
 # Server
 # ---------------------------------------------------------------------------
@@ -81,16 +92,17 @@ class VotingServer:
         self.host = host
         self.port = port
 
+        if not os.path.isdir(DATA_DIR):
+            raise FileNotFoundError(
+                f"Data directory not found at {DATA_DIR}. Run admin_setup.py first."
+            )
+
         # Load persisted data
-        with open(SERVER_KEYS_FILE) as fh:
-            keys = json.load(fh)
+        keys = _load_json(SERVER_KEYS_FILE, "Server keys file")
         self.server_priv = keys["private_key"]
 
-        with open(VOTERS_FILE) as fh:
-            self.voters = json.load(fh)
-
-        with open(CANDIDATES_FILE) as fh:
-            self.candidates = json.load(fh)
+        self.voters = _load_json(VOTERS_FILE, "Voter registry")
+        self.candidates = _load_json(CANDIDATES_FILE, "Candidates file")
 
         # State
         self.tally = {c: 0 for c in self.candidates}
@@ -221,9 +233,11 @@ class VotingServer:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    server = VotingServer()
     try:
+        server = VotingServer()
         server.start()
+    except FileNotFoundError as exc:
+        print(f"[!] {exc}")
     except KeyboardInterrupt:
         print("\n[!] Server interrupted by user.")
         server.stop()
