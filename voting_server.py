@@ -307,7 +307,35 @@ class VotingServer:
             self.tally[candidate_name] += 1
             self._persist_state()
 
+            # 7. Auto-close — if every registered voter has voted
+            if len(self.voted_ids) >= len(self.voters):
+                self._try_auto_close()
+
         return {"status": "accepted", "message": "Vote recorded successfully."}
+
+    def _try_auto_close(self):
+        """Auto-close the election when 100% turnout is reached.
+
+        Must be called while self._lock is held.
+        """
+        if not self.tally:
+            return
+        max_votes = max(self.tally.values())
+        tied = [c for c, v in self.tally.items() if v == max_votes]
+
+        if len(tied) > 1:
+            # Runoff — done inline (lock is already held, can't re-acquire)
+            self._round += 1
+            self._active_candidates = tied
+            self.tally = {c: 0 for c in tied}
+            self.voted_ids = set()
+            self._persist_state()
+            print(f"\n*** AUTO-CLOSE: 100% turnout — tie! Runoff round {self._round} with {tied} ***")
+        else:
+            self._election_closed = True
+            self._persist_state()
+            self._print_results()
+            print("\n*** AUTO-CLOSE: 100% turnout — election closed ***")
 
     # ------------------------------------------------------------------
     # Results

@@ -6,8 +6,8 @@ Run:  python voter_client_gui.py
 
 import json
 import os
+import sys
 import customtkinter as ctk
-from tkinter import messagebox
 
 from voter_client import cast_vote
 
@@ -53,7 +53,8 @@ class VoterApp(ctk.CTk):
         self._current_round = 1
         self._poll_id = None
 
-        self._load_data()
+        if not self._load_data():
+            return
 
         self._container = ctk.CTkFrame(self, fg_color="transparent")
         self._container.pack(fill="both", expand=True)
@@ -66,24 +67,38 @@ class VoterApp(ctk.CTk):
     # ── helpers ──────────────────────────────────────────────────────────
 
     def _load_data(self):
-        missing = False
+        errors = []
         try:
             with open(CANDIDATES_FILE) as f:
                 self._candidates = json.load(f)
         except FileNotFoundError:
-            messagebox.showerror("Setup Error",
-                                 "Candidates file not found.\nRun admin_setup.py first.")
-            missing = True
+            errors.append("Candidates file not found.")
         try:
             with open(VOTERS_FILE) as f:
                 self._voters = json.load(f)
         except FileNotFoundError:
-            messagebox.showerror("Setup Error",
-                                 "Voter registry not found.\nRun admin_setup.py first.")
-            missing = True
-        if missing:
-            self.destroy()
-            raise SystemExit(1)
+            errors.append("Voter registry not found.")
+        if errors:
+            # Show error in the GUI itself instead of a popup
+            self._container = ctk.CTkFrame(self, fg_color="transparent")
+            self._container.pack(fill="both", expand=True)
+            self._header(self._container)
+            content = ctk.CTkFrame(self._container, fg_color="transparent")
+            content.pack(fill="both", expand=True, padx=36, pady=24)
+            card = self._card(content)
+            card.pack(fill="x")
+            ctk.CTkLabel(card, text="SETUP ERROR",
+                         font=ctk.CTkFont(family=FONT, size=16, weight="bold"),
+                         text_color=ERROR).pack(pady=(24, 8))
+            ctk.CTkLabel(card, text="\n".join(errors) + "\n\nRun admin_setup.py first.",
+                         font=ctk.CTkFont(family=FONT, size=12),
+                         text_color=TEXT_SUB, wraplength=360, justify="center"
+                         ).pack(padx=24, pady=(0, 20))
+            ctk.CTkButton(card, text="Exit", height=42, corner_radius=8,
+                          fg_color=BORDER, hover_color="#D1D5DB", text_color=TEXT,
+                          font=ctk.CTkFont(family=FONT, size=13, weight="bold"),
+                          command=self.destroy).pack(fill="x", padx=24, pady=(0, 24))
+            return False
         if os.path.exists(RESULTS_FILE):
             try:
                 with open(RESULTS_FILE) as f:
@@ -93,6 +108,7 @@ class VoterApp(ctk.CTk):
                     self._candidates = active
             except (json.JSONDecodeError, FileNotFoundError):
                 pass
+        return True
 
     def _is_election_closed(self):
         if os.path.exists(RESULTS_FILE):
@@ -170,12 +186,12 @@ class VoterApp(ctk.CTk):
 
     def _fade_in(self, widget, steps=14, delay=35, step=0):
         """Card slide-up with ease-out cubic curve."""
-        total_offset = 30  # pixels to slide from
+        total_offset = 30
         if step >= steps:
             widget.pack_configure(pady=(20, 10))
             return
         t = step / steps
-        eased = 1 - (1 - t) ** 3  # ease-out cubic
+        eased = 1 - (1 - t) ** 3
         offset = int(total_offset * (1 - eased))
         widget.pack_configure(pady=(20 + offset, 10))
         self.after(delay, self._fade_in, widget, steps, delay, step + 1)
@@ -223,7 +239,6 @@ class VoterApp(ctk.CTk):
         card = self._card(content, "VOTER AUTHENTICATION")
         card.pack(fill="x", pady=(20, 10))
 
-        # Voter ID label + description inline
         ctk.CTkLabel(card, text="Voter ID — Enter your ID to access the ballot",
                      font=ctk.CTkFont(family=FONT, size=12),
                      text_color=TEXT_SUB, anchor="w"
@@ -285,7 +300,6 @@ class VoterApp(ctk.CTk):
         content = ctk.CTkFrame(self._container, fg_color="transparent")
         content.pack(fill="both", expand=True, padx=36, pady=16)
 
-        # Top bar
         bar = ctk.CTkFrame(content, fg_color="transparent")
         bar.pack(fill="x", pady=(0, 10))
         ctk.CTkLabel(bar, text=f"{self._voter_name}  ({self._voter_id})",
@@ -297,7 +311,6 @@ class VoterApp(ctk.CTk):
                       font=ctk.CTkFont(family=FONT, size=11),
                       command=self._show_login_page).pack(side="right")
 
-        # Ballot card
         card = self._card(content, "SELECT YOUR CANDIDATE")
         card.pack(fill="both", expand=True)
 
@@ -306,8 +319,13 @@ class VoterApp(ctk.CTk):
                      text_color=TEXT_SUB, anchor="w"
                      ).pack(fill="x", padx=24, pady=(0, 10))
 
-        # Candidates — plain frame, no scrollbar
-        cand_frame = ctk.CTkFrame(card, fg_color="transparent")
+        # Use scrollable frame only when there are many candidates
+        if len(self._candidates) > 6:
+            cand_frame = ctk.CTkScrollableFrame(card, fg_color="transparent",
+                                                 scrollbar_button_color=BORDER,
+                                                 scrollbar_button_hover_color="#D1D5DB")
+        else:
+            cand_frame = ctk.CTkFrame(card, fg_color="transparent")
         cand_frame.pack(fill="both", expand=True, padx=16, pady=(0, 6))
 
         self._cand_var = ctk.StringVar(value="")
@@ -320,7 +338,6 @@ class VoterApp(ctk.CTk):
                 radiobutton_width=18, radiobutton_height=18,
             ).pack(fill="x", padx=10, pady=5, anchor="w")
 
-        # Cast button
         self._vote_btn = ctk.CTkButton(
             card, text="Cast Vote", height=44, corner_radius=8,
             fg_color=ACCENT, hover_color=ACCENT_HV,
@@ -342,18 +359,69 @@ class VoterApp(ctk.CTk):
         if not cand:
             self._vote_msg.set("Please select a candidate before voting.")
             return
-        if not messagebox.askyesno(
-            "Confirm Vote",
-            f"You are about to cast your vote for:\n\n"
-            f"    {cand}\n\nThis action cannot be undone. Proceed?",
-        ):
-            return
-        self._vote_msg.set("Encrypting and signing vote ...")
-        self._vote_btn.configure(state="disabled")
+        # Show inline confirmation page instead of popup
+        self._show_confirm_vote(cand)
+
+    # ══════════════════════════════════════════════════════════════════════
+    #  Vote Confirmation (replaces messagebox.askyesno)
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _show_confirm_vote(self, candidate):
+        self._clear()
+        sub = f"Runoff — Round {self._current_round}" if self._current_round > 1 else ""
+        self._header(self._container, subtitle=sub)
+
+        content = ctk.CTkFrame(self._container, fg_color="transparent")
+        content.pack(fill="both", expand=True, padx=36, pady=24)
+
+        card = self._card(content, "CONFIRM YOUR VOTE")
+        card.pack(fill="x", pady=(20, 10))
+
+        ctk.CTkLabel(card, text="You are about to cast your vote for:",
+                     font=ctk.CTkFont(family=FONT, size=12),
+                     text_color=TEXT_SUB).pack(padx=24, pady=(0, 12))
+
+        # Highlighted candidate name
+        name_frame = ctk.CTkFrame(card, fg_color="#EEF2FF", corner_radius=8,
+                                  border_width=1, border_color="#C7D2FE")
+        name_frame.pack(fill="x", padx=24, pady=(0, 12))
+        ctk.CTkLabel(name_frame, text=candidate,
+                     font=ctk.CTkFont(family=FONT, size=16, weight="bold"),
+                     text_color=ACCENT).pack(pady=12)
+
+        ctk.CTkLabel(card, text="This action cannot be undone.",
+                     font=ctk.CTkFont(family=FONT, size=11),
+                     text_color=WARNING).pack(pady=(0, 16))
+
+        self._confirm_msg = ctk.StringVar()
+        ctk.CTkLabel(card, textvariable=self._confirm_msg,
+                     font=ctk.CTkFont(family=FONT, size=11),
+                     text_color=TEXT_SUB, wraplength=360
+                     ).pack(fill="x", padx=24, pady=(0, 8))
+
+        btn_row = ctk.CTkFrame(card, fg_color="transparent")
+        btn_row.pack(fill="x", padx=24, pady=(0, 24))
+
+        ctk.CTkButton(btn_row, text="Confirm Vote", height=44, corner_radius=8,
+                      fg_color=ACCENT, hover_color=ACCENT_HV,
+                      font=ctk.CTkFont(family=FONT, size=14, weight="bold"),
+                      command=lambda: self._do_cast_vote(candidate)
+                      ).pack(side="left", expand=True, fill="x", padx=(0, 4))
+
+        ctk.CTkButton(btn_row, text="Go Back", height=44, corner_radius=8,
+                      fg_color=BORDER, hover_color="#D1D5DB", text_color=TEXT,
+                      font=ctk.CTkFont(family=FONT, size=14, weight="bold"),
+                      command=self._show_voting_page
+                      ).pack(side="left", expand=True, fill="x", padx=(4, 0))
+
+        self._fade_in(card)
+
+    def _do_cast_vote(self, candidate):
+        self._confirm_msg.set("Encrypting and signing vote ...")
         self.update_idletasks()
 
         try:
-            resp = cast_vote(self._voter_id, cand)
+            resp = cast_vote(self._voter_id, candidate)
         except KeyError as exc:
             self._show_result("error", str(exc))
             return
