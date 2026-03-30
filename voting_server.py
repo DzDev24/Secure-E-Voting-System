@@ -106,17 +106,30 @@ class VotingServer:
         self.candidates = _load_json(CANDIDATES_FILE, "Candidates file")
 
         # State
-        self.tally = {c: 0 for c in self.candidates}
+        self._round = 1
+        self._active_candidates = list(self.candidates)
         self.voted_ids: set = set()
+        self._election_closed = False
+        if os.path.exists(RESULTS_FILE):
+            try:
+                prior = _load_json(RESULTS_FILE, "Results file")
+                self._round = prior.get("round", 1)
+                saved_active = prior.get("active_candidates")
+                if saved_active:
+                    self._active_candidates = saved_active
+                self.voted_ids = set(prior.get("voted_ids", []))
+                self._election_closed = prior.get("election_closed", False)
+            except (FileNotFoundError, json.JSONDecodeError):
+                pass
+        # Build tally from active candidates, then restore any saved counts
+        self.tally = {c: 0 for c in self._active_candidates}
         if os.path.exists(RESULTS_FILE):
             try:
                 prior = _load_json(RESULTS_FILE, "Results file")
                 stored_tally = prior.get("tally", {})
-                for candidate in self.tally:
-                    self.tally[candidate] = stored_tally.get(candidate, 0)
-                self.voted_ids = set(prior.get("voted_ids", []))
+                for c in self.tally:
+                    self.tally[c] = stored_tally.get(c, 0)
             except (FileNotFoundError, json.JSONDecodeError):
-                # If the file disappears or is malformed, fall back to fresh state.
                 pass
         self._lock = threading.Lock()
         self._running = True
@@ -171,6 +184,28 @@ class VotingServer:
             action = msg.get("action", "")
 
             if action == "close_election":
+                # Check for tie at the top
+                if self.tally:
+                    max_votes = max(self.tally.values())
+                    if max_votes == 0:
+                        send_msg(conn, {
+                            "status": "rejected",
+                            "message": "No votes cast yet. Cannot close.",
+                        })
+                        return
+                    tied = [c for c, v in self.tally.items() if v == max_votes]
+                    if len(tied) > 1:
+                        # Tie detected — start runoff round
+                        self._initiate_runoff(tied)
+                        send_msg(conn, {
+                            "status": "runoff",
+                            "message": f"Tie detected! Starting round {self._round}.",
+                            "round": self._round,
+                            "candidates": tied,
+                        })
+                        return
+                # No tie — close the election
+                self._election_closed = True
                 self.stop()
                 send_msg(conn, {"status": "closed", "message": self._results_str()})
                 return
@@ -180,7 +215,11 @@ class VotingServer:
                     tally = dict(self.tally)
                     total = sum(tally.values())
                 send_msg(conn, {
-                    "status": "ok", "tally": tally, "total_votes": total,
+                    "status": "ok", "tally": tally,
+                    "total_votes": total,
+                    "total_registered": len(self.voters),
+                    "round": self._round,
+                    "active_candidates": list(self._active_candidates),
                 })
                 return
 
@@ -260,8 +299,8 @@ class VotingServer:
             except Exception:
                 return {"status": "rejected", "message": "Decryption failed."}
 
-            # 5. Validate candidate name against the registered list
-            if candidate_name not in self.candidates:
+            # 5. Validate candidate name against the active candidate list
+            if candidate_name not in self._active_candidates:
                 return {"status": "rejected", "message": "Invalid candidate."}
 
             # 6. Tally — increment the anonymous candidate counter
@@ -275,7 +314,8 @@ class VotingServer:
     # ------------------------------------------------------------------
 
     def _results_str(self) -> str:
-        lines = ["=== Final Results ==="]
+        header = f"=== Final Results (Round {self._round}) ==="
+        lines = [header]
         for candidate, count in self.tally.items():
             lines.append(f"  {candidate}: {count} vote(s)")
         if self.tally:
@@ -287,10 +327,26 @@ class VotingServer:
         print("\n" + self._results_str())
 
     def _persist_state(self) -> None:
-        """Persist tally and voted IDs to disk to survive restarts."""
-        snapshot = {"tally": self.tally, "voted_ids": list(self.voted_ids)}
+        """Persist tally, voted IDs, round, and active candidates."""
+        snapshot = {
+            "tally": self.tally,
+            "voted_ids": list(self.voted_ids),
+            "election_closed": self._election_closed,
+            "round": self._round,
+            "active_candidates": list(self._active_candidates),
+        }
         with open(RESULTS_FILE, "w") as fh:
             json.dump(snapshot, fh, indent=2)
+
+    def _initiate_runoff(self, tied_candidates):
+        """Start a new runoff round with only the tied candidates."""
+        with self._lock:
+            self._round += 1
+            self._active_candidates = tied_candidates
+            self.tally = {c: 0 for c in tied_candidates}
+            self.voted_ids = set()  # everyone can vote again
+            self._persist_state()
+        print(f"\n*** RUNOFF: Round {self._round} with {tied_candidates} ***")
 
 
 # ---------------------------------------------------------------------------

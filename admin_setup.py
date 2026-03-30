@@ -48,11 +48,11 @@ def setup(
         num_candidates = int(input("Enter number of candidates [3]: ").strip() or 3)
         candidate_names = []
         for i in range(num_candidates):
-            name = input(f"  Candidate {i + 1} name [Candidate {chr(65 + i)}]: ").strip()
-            candidate_names.append(name or f"Candidate {chr(65 + i)}")
+            name = input(f"  Candidate {i + 1} name [Candidate {i + 1}]: ").strip()
+            candidate_names.append(name or f"Candidate {i + 1}")
     else:
         if candidate_names is None:
-            candidate_names = ["Candidate A", "Candidate B", "Candidate C"]
+            candidate_names = [f"Candidate {i + 1}" for i in range(3)]
 
     with open(CANDIDATES_FILE, "w") as fh:
         json.dump(candidate_names, fh, indent=2)
