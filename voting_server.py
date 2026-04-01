@@ -31,7 +31,7 @@ import threading
 from crypto_utils import decrypt, int_to_text, verify
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-SERVER_KEYS_FILE = os.path.join(DATA_DIR, "server_keys.json")
+SERVER_PRIV_FILE = os.path.join(DATA_DIR, "server_private_key.json")
 VOTERS_FILE = os.path.join(DATA_DIR, "voters.json")
 CANDIDATES_FILE = os.path.join(DATA_DIR, "candidates.json")
 RESULTS_FILE = os.path.join(DATA_DIR, "results.json")
@@ -99,7 +99,7 @@ class VotingServer:
             )
 
         # Load persisted data
-        keys = _load_json(SERVER_KEYS_FILE, "Server keys file")
+        keys = _load_json(SERVER_PRIV_FILE, "Server private key file")
         self.server_priv = keys["private_key"]
 
         self.voters = _load_json(VOTERS_FILE, "Voter registry")
@@ -108,7 +108,7 @@ class VotingServer:
         # State
         self._round = 1
         self._active_candidates = list(self.candidates)
-        self.voted_ids: set = set()
+        self.voted_ids: set = set()  # tracks voter names
         self._election_closed = False
         if os.path.exists(RESULTS_FILE):
             try:
@@ -217,7 +217,9 @@ class VotingServer:
                 send_msg(conn, {
                     "status": "ok", "tally": tally,
                     "total_votes": total,
-                    "total_registered": len(self.voters),
+                    "total_registered": sum(
+                        1 for v in self.voters.values() if v.get("public_key")
+                    ),
                     "round": self._round,
                     "active_candidates": list(self._active_candidates),
                 })
@@ -236,11 +238,11 @@ class VotingServer:
         Phase 1 (Identity):  verifies WHO is voting — never inspects the ballot.
         Phase 2 (Counting):  reveals WHAT was voted — never sees voter identity.
         """
-        voter_id = msg.get("voter_id", "")
+        voter_name = msg.get("voter_name", "")
         encrypted_vote = msg.get("encrypted_vote")
         signature = msg.get("signature")
 
-        if not voter_id or encrypted_vote is None or signature is None:
+        if not voter_name or encrypted_vote is None or signature is None:
             return {"status": "rejected", "message": "Malformed vote packet."}
 
         # ── PHASE 1: Identity Verification (knows WHO, not WHAT) ─────
@@ -248,11 +250,13 @@ class VotingServer:
         # its content is never inspected or decrypted during this phase.
 
         # 1. Identity check — retrieve the voter's public key
-        voter_record = self.voters.get(voter_id)
+        voter_record = self.voters.get(voter_name)
         if voter_record is None:
-            return {"status": "rejected", "message": "Unknown voter ID."}
+            return {"status": "rejected", "message": "Unknown voter name."}
 
-        voter_pub = voter_record["public_key"]
+        voter_pub = voter_record.get("public_key")
+        if not voter_pub:
+            return {"status": "rejected", "message": "Voter has not generated keys yet."}
 
         # 2. Signature verification — confirms authenticity and integrity
         if not verify(encrypted_vote, signature, voter_pub):
@@ -260,12 +264,12 @@ class VotingServer:
 
         # 3. Anti-duplicate — ensure this voter has not already voted
         with self._lock:
-            if voter_id in self.voted_ids:
+            if voter_name in self.voted_ids:
                 return {"status": "rejected", "message": "Voter has already voted."}
-            self.voted_ids.add(voter_id)  # tentatively mark as voted
+            self.voted_ids.add(voter_name)  # tentatively mark as voted
 
         # ── PHASE 2: Anonymous Ballot Counting (knows WHAT, not WHO) ─
-        # voter_id is deliberately NOT forwarded to the counting method.
+        # voter_name is deliberately NOT forwarded to the counting method.
         # This separation ensures the tallying logic cannot correlate a
         # ballot with any specific voter, providing relative anonymity.
 
@@ -274,7 +278,7 @@ class VotingServer:
         # Roll back if counting failed so the voter may retry
         if result["status"] != "accepted":
             with self._lock:
-                self.voted_ids.discard(voter_id)
+                self.voted_ids.discard(voter_name)
 
         return result
 
@@ -307,8 +311,11 @@ class VotingServer:
             self.tally[candidate_name] += 1
             self._persist_state()
 
-            # 7. Auto-close — if every registered voter has voted
-            if len(self.voted_ids) >= len(self.voters):
+            # 7. Auto-close — if every registered voter (with keys) has voted
+            registered_with_keys = sum(
+                1 for v in self.voters.values() if v.get("public_key")
+            )
+            if registered_with_keys > 0 and len(self.voted_ids) >= registered_with_keys:
                 self._try_auto_close()
 
         return {"status": "accepted", "message": "Vote recorded successfully."}

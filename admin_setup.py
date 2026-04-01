@@ -1,25 +1,24 @@
 """
-admin_setup.py – One-time election setup script.
+admin_setup.py – Election setup script (Admin only).
 
-Run this script before starting the election to:
-  1. Generate an RSA key pair for the server (default ~2048-bit modulus from two 1024-bit primes).
-  2. Generate RSA key pairs for each registered voter (public registry + client-only privates).
-  3. Save the candidate list.
+Run this script to:
+  1. Generate an RSA key pair for the server.
+  2. Register candidate names.
+  3. Register voter names (no key generation — voters generate their own keys).
 
 All data is written to the ``data/`` directory as JSON files.
 """
 
 import json
 import os
-import sys
 
 from crypto_utils import generate_keypair
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-SERVER_KEYS_FILE = os.path.join(DATA_DIR, "server_keys.json")
+SERVER_PUB_FILE  = os.path.join(DATA_DIR, "server_public_key.json")
+SERVER_PRIV_FILE = os.path.join(DATA_DIR, "server_private_key.json")
 VOTERS_FILE = os.path.join(DATA_DIR, "voters.json")
 CANDIDATES_FILE = os.path.join(DATA_DIR, "candidates.json")
-VOTER_PRIVATES_FILE = os.path.join(DATA_DIR, "voter_private_keys.json")
 
 
 def setup(
@@ -31,13 +30,10 @@ def setup(
     """Run the election setup.
 
     Args:
-        candidate_names: List of candidate name strings (used when not interactive).
-        voter_names: List of voter name strings (used when not interactive).
-        bits: RSA key bit-length per prime.
+        candidate_names: List of candidate name strings.
+        voter_names: List of voter name strings.
+        bits: RSA key bit-length per prime (for server keys only).
         interactive: If True, prompt the user for input via stdin.
-
-    Returns:
-        Dict with keys ``server_keys``, ``voters_public``, ``voters_private``, ``candidates``.
     """
     os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -63,13 +59,16 @@ def setup(
     # ------------------------------------------------------------------
     print("[*] Generating server RSA key pair …", end=" ", flush=True)
     server_pub, server_priv = generate_keypair(bits)
-    server_keys = {"public_key": server_pub, "private_key": server_priv}
-    with open(SERVER_KEYS_FILE, "w") as fh:
-        json.dump(server_keys, fh, indent=2)
+    with open(SERVER_PUB_FILE, "w") as fh:
+        json.dump({"public_key": server_pub}, fh, indent=2)
+    with open(SERVER_PRIV_FILE, "w") as fh:
+        json.dump({"private_key": server_priv}, fh, indent=2)
     print("done.")
+    print(f"    Public key  → {SERVER_PUB_FILE}  (shared with voters)")
+    print(f"    Private key → {SERVER_PRIV_FILE} (server only)")
 
     # ------------------------------------------------------------------
-    # Voters
+    # Voters — register names only (voters generate their own keys)
     # ------------------------------------------------------------------
     if interactive:
         num_voters = int(input("Enter number of voters [30]: ").strip() or 30)
@@ -81,35 +80,20 @@ def setup(
         if voter_names is None:
             voter_names = [f"Student {i + 1}" for i in range(30)]
 
-    voters_public = {}
-    voters_private = {}
-    for idx, name in enumerate(voter_names, start=1):
-        voter_id = f"STU_{idx:03d}"
-        print(f"[*] Generating keys for {voter_id} ({name}) …", end=" ", flush=True)
-        pub, priv = generate_keypair(bits)
-        voters_public[voter_id] = {
-            "name": name,
-            "public_key": pub,
-        }
-        voters_private[voter_id] = {
-            "name": name,
-            "private_key": priv,
-        }
-        print("done.")
+    # Save voter registry — names only, no keys yet
+    voters = {}
+    for name in voter_names:
+        if name in voters:
+            print(f"[!] Warning: Duplicate voter name '{name}' — skipped.")
+            continue
+        voters[name] = {}  # empty — public key will be added by generate_keys.py
 
     with open(VOTERS_FILE, "w") as fh:
-        json.dump(voters_public, fh, indent=2)
-    with open(VOTER_PRIVATES_FILE, "w") as fh:
-        json.dump(voters_private, fh, indent=2)
-    print(f"[+] Voter registry saved ({len(voters_public)} voters).")
+        json.dump(voters, fh, indent=2)
+    print(f"[+] Voter registry saved ({len(voters)} voters).")
+    print(f"    Each voter must now run generate_keys.py to generate their own keys.")
 
     print("\n[✓] Setup complete. Files written to:", DATA_DIR)
-    return {
-        "server_keys": server_keys,
-        "voters_public": voters_public,
-        "voters_private": voters_private,
-        "candidates": candidate_names,
-    }
 
 
 if __name__ == "__main__":

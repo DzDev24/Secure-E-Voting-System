@@ -1,9 +1,9 @@
 """
-voter_client.py – CLI-based voter client for the e-voting system.
+voter_client.py – Voter client for the e-voting system.
 
 Flow:
-  1. Ask for voter ID.
-  2. Load voter private key from data/voters.json.
+  1. Ask for voter name.
+  2. Load voter's private key from data/keys/<name>_private.json.
   3. Load server public key from data/server_keys.json.
   4. Display candidates loaded from data/candidates.json.
   5. Ask voter to choose a candidate.
@@ -21,10 +21,10 @@ import struct
 from crypto_utils import encrypt, sign, text_to_int
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-SERVER_KEYS_FILE = os.path.join(DATA_DIR, "server_keys.json")
+SERVER_PUB_FILE = os.path.join(DATA_DIR, "server_public_key.json")
 VOTERS_FILE = os.path.join(DATA_DIR, "voters.json")
 CANDIDATES_FILE = os.path.join(DATA_DIR, "candidates.json")
-VOTER_PRIVATES_FILE = os.path.join(DATA_DIR, "voter_private_keys.json")
+KEYS_DIR = os.path.join(DATA_DIR, "keys")
 
 HOST = "localhost"
 PORT = 5555
@@ -73,34 +73,38 @@ def _load_json(path: str, label: str):
 # Core vote-casting logic (also used by the GUI)
 # ---------------------------------------------------------------------------
 
-def cast_vote(voter_id: str, candidate_name: str) -> dict:
+def cast_vote(voter_name: str, candidate_name: str) -> dict:
     """Encrypt, sign, and send a vote to the server.
 
     Args:
-        voter_id: Registered voter ID (e.g. ``"STU_001"``).
+        voter_name: Registered voter name (e.g. ``"Nazim"``).
         candidate_name: Name of the chosen candidate.
 
     Returns:
         Server response dict (with keys ``status`` and ``message``).
 
     Raises:
-        KeyError: If the voter ID is not in the local registry.
+        KeyError: If the voter name is not in the local registry.
         FileNotFoundError: If required data files are missing.
         ConnectionRefusedError: If the server is not reachable.
     """
-    # Load keys
-    server_data = _load_json(SERVER_KEYS_FILE, "Server keys file")
+    # Load server public key
+    server_data = _load_json(SERVER_PUB_FILE, "Server public key file")
     server_pub = server_data["public_key"]
 
-    voters = _load_json(VOTERS_FILE, "Voter registry (public keys)")
-    voter_privs = _load_json(VOTER_PRIVATES_FILE, "Voter private key store")
+    # Load voter registry (to confirm registration)
+    voters = _load_json(VOTERS_FILE, "Voter registry")
+    if voter_name not in voters:
+        raise KeyError(f"Name '{voter_name}' not found in voter registry.")
+    if not voters[voter_name].get("public_key"):
+        raise KeyError(f"No keys registered for '{voter_name}'. Run generate_keys.py first.")
 
-    if voter_id not in voters:
-        raise KeyError(f"Voter ID '{voter_id}' not found in registry.")
-    if voter_id not in voter_privs:
-        raise KeyError(f"Private key for voter ID '{voter_id}' not found.")
-
-    voter_priv = voter_privs[voter_id]["private_key"]
+    # Load voter's private key from their personal key file
+    priv_path = os.path.join(KEYS_DIR, f"{voter_name}_private.json")
+    if not os.path.exists(priv_path):
+        raise KeyError(f"Private key file not found for '{voter_name}'. Run generate_keys.py first.")
+    with open(priv_path) as fh:
+        voter_priv = json.load(fh)["private_key"]
 
     # Encrypt & sign
     plaintext_int = text_to_int(candidate_name)
@@ -109,7 +113,7 @@ def cast_vote(voter_id: str, candidate_name: str) -> dict:
 
     envelope = {
         "action": "vote",
-        "voter_id": voter_id,
+        "voter_name": voter_name,
         "encrypted_vote": encrypted_vote,
         "signature": signature,
     }
@@ -123,29 +127,21 @@ def cast_vote(voter_id: str, candidate_name: str) -> dict:
 
 
 def close_election() -> dict:
-    """Send a close-election command to the server.
-
-    Returns:
-        Server response dict.
-    """
+    """Send a close-election command to the server."""
     with socket.create_connection((HOST, PORT), timeout=10) as sock:
         send_msg(sock, {"action": "close_election"})
         return recv_msg(sock)
 
 
 def get_results() -> dict:
-    """Fetch the current tally from the server without closing the election.
-
-    Returns:
-        Server response dict with ``tally`` and ``total_votes`` keys.
-    """
+    """Fetch the current tally from the server without closing the election."""
     with socket.create_connection((HOST, PORT), timeout=10) as sock:
         send_msg(sock, {"action": "get_results"})
         return recv_msg(sock)
 
 
 def reset_votes():
-    """Delete the results file to clear vote tallies and voted-ID records."""
+    """Delete the results file to clear vote tallies and voted records."""
     path = os.path.join(DATA_DIR, "results.json")
     if os.path.exists(path):
         os.remove(path)
@@ -168,9 +164,9 @@ def reset_all():
 def _cli() -> None:
     print("=== Secure E-Voting System ===\n")
 
-    voter_id = input("Enter your voter ID (e.g. STU_001): ").strip()
-    if not voter_id:
-        print("[!] No voter ID entered. Exiting.")
+    voter_name = input("Enter your name: ").strip()
+    if not voter_name:
+        print("[!] No name entered. Exiting.")
         return
 
     try:
@@ -193,9 +189,9 @@ def _cli() -> None:
         print("[!] Invalid selection. Exiting.")
         return
 
-    print(f"\n[*] Casting vote for '{candidate_name}' as '{voter_id}' …")
+    print(f"\n[*] Casting vote for '{candidate_name}' as '{voter_name}' …")
     try:
-        response = cast_vote(voter_id, candidate_name)
+        response = cast_vote(voter_name, candidate_name)
     except KeyError as exc:
         print(f"[!] {exc}")
         return

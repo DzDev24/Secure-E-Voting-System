@@ -46,7 +46,6 @@ class VoterApp(ctk.CTk):
         self.minsize(460, 520)
         self.configure(fg_color=BG)
 
-        self._voter_id = None
         self._voter_name = None
         self._candidates = []
         self._voters = {}
@@ -228,7 +227,7 @@ class VoterApp(ctk.CTk):
             self._show_closed_message()
             return
         self._clear()
-        self._voter_id = self._voter_name = None
+        self._voter_name = None
 
         sub = f"Runoff — Round {self._current_round}" if self._current_round > 1 else ""
         self._header(self._container, subtitle=sub)
@@ -239,14 +238,14 @@ class VoterApp(ctk.CTk):
         card = self._card(content, "VOTER AUTHENTICATION")
         card.pack(fill="x", pady=(20, 10))
 
-        ctk.CTkLabel(card, text="Voter ID — Enter your ID to access the ballot",
+        ctk.CTkLabel(card, text="Enter your name to access the ballot",
                      font=ctk.CTkFont(family=FONT, size=12),
                      text_color=TEXT_SUB, anchor="w"
                      ).pack(fill="x", padx=24, pady=(0, 6))
 
         self._login_var = ctk.StringVar()
         entry = ctk.CTkEntry(card, textvariable=self._login_var,
-                             placeholder_text="e.g. STU_001",
+                             placeholder_text="e.g. Nazim",
                              height=42, corner_radius=8,
                              font=ctk.CTkFont(family=FONT, size=13),
                              border_color=BORDER, fg_color="#F9FAFB")
@@ -269,18 +268,20 @@ class VoterApp(ctk.CTk):
         self._poll_state()
 
     def _on_login(self):
-        vid = self._login_var.get().strip()
-        if not vid:
-            self._login_msg.set("Please enter your Voter ID.")
+        name = self._login_var.get().strip()
+        if not name:
+            self._login_msg.set("Please enter your name.")
             return
-        if vid not in self._voters:
-            self._login_msg.set(f"Voter ID '{vid}' not found in the registry.")
+        if name not in self._voters:
+            self._login_msg.set(f"Name '{name}' not found in the registry.")
             return
-        if self._has_voted(vid):
-            self._login_msg.set(f"Voter '{vid}' has already cast their vote.")
+        if not self._voters[name].get("public_key"):
+            self._login_msg.set(f"No keys registered for '{name}'. Run generate_keys.py first.")
             return
-        self._voter_id = vid
-        self._voter_name = self._voters[vid].get("name", vid)
+        if self._has_voted(name):
+            self._login_msg.set(f"'{name}' has already cast their vote.")
+            return
+        self._voter_name = name
         self._show_voting_page()
 
     # ══════════════════════════════════════════════════════════════════════
@@ -302,7 +303,7 @@ class VoterApp(ctk.CTk):
 
         bar = ctk.CTkFrame(content, fg_color="transparent")
         bar.pack(fill="x", pady=(0, 10))
-        ctk.CTkLabel(bar, text=f"{self._voter_name}  ({self._voter_id})",
+        ctk.CTkLabel(bar, text=f"{self._voter_name}",
                      font=ctk.CTkFont(family=FONT, size=12),
                      text_color=TEXT_SUB).pack(side="left")
         ctk.CTkButton(bar, text="Log Out", width=72, height=28, corner_radius=6,
@@ -421,7 +422,7 @@ class VoterApp(ctk.CTk):
         self.update_idletasks()
 
         try:
-            resp = cast_vote(self._voter_id, candidate)
+            resp = cast_vote(self._voter_name, candidate)
         except KeyError as exc:
             self._show_result("error", str(exc))
             return
@@ -469,8 +470,8 @@ class VoterApp(ctk.CTk):
                      font=ctk.CTkFont(family=FONT, size=12),
                      text_color=TEXT, wraplength=380, justify="center"
                      ).pack(padx=24, pady=(0, 4))
-        if self._voter_id:
-            ctk.CTkLabel(card, text=f"Voter: {self._voter_name} ({self._voter_id})",
+        if self._voter_name:
+            ctk.CTkLabel(card, text=f"Voter: {self._voter_name}",
                          font=ctk.CTkFont(family=FONT, size=11),
                          text_color=TEXT_SUB).pack(pady=(2, 16))
 

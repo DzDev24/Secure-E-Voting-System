@@ -59,7 +59,10 @@ class AdminApp(ctk.CTk):
         self._total_registered = 0
         try:
             with open(VOTERS_FILE) as f:
-                self._total_registered = len(json.load(f))
+                voters = json.load(f)
+                self._total_registered = sum(
+                    1 for v in voters.values() if v.get("public_key")
+                )
         except (FileNotFoundError, json.JSONDecodeError):
             pass
 
