@@ -2,16 +2,19 @@
 admin_gui.py – Clean light-themed admin interface (CustomTkinter).
 
 All confirmations and messages are shown inline — no popup dialogs.
+The voting server can be started and stopped directly from this panel.
 
 Run:  python admin_gui.py
 """
 
 import json
 import os
+import socket
 import threading
 import customtkinter as ctk
 
 from voter_client import close_election, get_results, reset_votes, reset_all
+from voting_server import VotingServer
 
 # ─── Theme ───────────────────────────────────────────────────────────────────
 ctk.set_appearance_mode("light")
@@ -48,11 +51,13 @@ class AdminApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("E-Voting Admin Panel")
-        self.geometry("580x680")
-        self.minsize(500, 580)
+        self.geometry("580x720")
+        self.minsize(500, 620)
         self.configure(fg_color=BG)
 
         self._poll_id = None
+        self._server = None          # VotingServer instance
+        self._server_thread = None   # Background thread running the server
         self._container = ctk.CTkFrame(self, fg_color="transparent")
         self._container.pack(fill="both", expand=True)
 
@@ -65,6 +70,9 @@ class AdminApp(ctk.CTk):
                 )
         except (FileNotFoundError, json.JSONDecodeError):
             pass
+
+        # Clean shutdown when window is closed
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         if self._is_election_closed():
             self._show_final_results(self._load_results_data())
@@ -140,7 +148,39 @@ class AdminApp(ctk.CTk):
         content = ctk.CTkFrame(self._container, fg_color="transparent")
         content.pack(fill="both", expand=True, padx=28, pady=16)
 
-        # Inline status message (replaces messageboxes)
+        # ── Server control bar ──────────────────────────────────────
+        srv_frame = ctk.CTkFrame(content, fg_color=CARD, corner_radius=10,
+                                  border_width=1, border_color=BORDER)
+        srv_frame.pack(fill="x", pady=(0, 10))
+
+        srv_inner = ctk.CTkFrame(srv_frame, fg_color="transparent")
+        srv_inner.pack(fill="x", padx=16, pady=10)
+
+        is_running = self._is_server_running()
+        dot_color = SUCCESS if is_running else "#D1D5DB"
+        status_text = "Server Running" if is_running else "Server Stopped"
+
+        # Status dot + text
+        dot_label = ctk.CTkLabel(srv_inner, text="●",
+                                 font=ctk.CTkFont(size=14),
+                                 text_color=dot_color)
+        dot_label.pack(side="left")
+        ctk.CTkLabel(srv_inner, text=status_text,
+                     font=ctk.CTkFont(family=FONT, size=12, weight="bold"),
+                     text_color=TEXT).pack(side="left", padx=(6, 0))
+
+        if is_running:
+            ctk.CTkButton(srv_inner, text="Stop Server", width=110, height=32,
+                          corner_radius=6, fg_color=ERROR, hover_color="#B91C1C",
+                          font=ctk.CTkFont(family=FONT, size=11, weight="bold"),
+                          command=self._on_stop_server).pack(side="right")
+        else:
+            ctk.CTkButton(srv_inner, text="Start Server", width=110, height=32,
+                          corner_radius=6, fg_color=SUCCESS, hover_color="#047857",
+                          font=ctk.CTkFont(family=FONT, size=11, weight="bold"),
+                          command=self._start_server).pack(side="right")
+
+        # ── Status message banner ───────────────────────────────────
         if status_msg:
             msg_frame = ctk.CTkFrame(content, fg_color="#F0FDF4" if status_color == SUCCESS
                                      else "#FEF3C7" if status_color == WARNING
@@ -523,9 +563,10 @@ class AdminApp(ctk.CTk):
             self._show_dashboard()
 
     def _do_reset_votes(self):
+        self._stop_server()
         reset_votes()
         self._show_dashboard(
-            status_msg="Vote results have been cleared. Restart the server to apply changes.",
+            status_msg="Vote results have been cleared. Start the server to begin a new round.",
             status_color=SUCCESS)
 
     def _confirm_full_reset(self):
@@ -543,16 +584,76 @@ class AdminApp(ctk.CTk):
         )
 
     def _do_full_reset(self):
+        self._stop_server()
         reset_all()
         self._total_registered = 0
-        if os.path.isdir(DATA_DIR):
+        self._show_dashboard(
+            status_msg="All election data has been deleted. Run admin_setup.py to set up a new election.",
+            status_color=SUCCESS)
+
+    # ══════════════════════════════════════════════════════════════════════
+    #  Server Control
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _is_server_running(self):
+        """Check if the embedded server thread is alive."""
+        return self._server_thread is not None and self._server_thread.is_alive()
+
+    def _start_server(self):
+        """Start the voting server in a background thread."""
+        if self._is_server_running():
+            return
+
+        # Check if port is already in use (external server maybe)
+        try:
+            test = socket.create_connection(("localhost", 5555), timeout=1)
+            test.close()
             self._show_dashboard(
-                status_msg="All election data has been deleted. Run admin_setup.py to set up a new election.",
-                status_color=SUCCESS)
-        else:
+                status_msg="Port 5555 is already in use. Stop any existing server first.",
+                status_color=WARNING)
+            return
+        except (ConnectionRefusedError, OSError):
+            pass  # Port is free — good
+
+        try:
+            self._server = VotingServer()
+        except FileNotFoundError as exc:
             self._show_dashboard(
-                status_msg="All election data has been deleted. Run admin_setup.py to set up a new election.",
-                status_color=SUCCESS)
+                status_msg=str(exc),
+                status_color=ERROR)
+            return
+
+        self._server_thread = threading.Thread(
+            target=self._server.start, daemon=True)
+        self._server_thread.start()
+
+        # Small delay to let the socket bind
+        self.after(300, lambda: self._show_dashboard(
+            status_msg="Voting server started on localhost:5555.",
+            status_color=SUCCESS))
+
+    def _stop_server(self):
+        """Stop the embedded server gracefully."""
+        if not self._is_server_running():
+            return
+        self._server.stop()
+        self._server_thread.join(timeout=3)
+        self._server = None
+        self._server_thread = None
+
+    def _on_stop_server(self):
+        """Stop the server and refresh the dashboard to update the status."""
+        self._stop_server()
+        self._show_dashboard(
+            status_msg="Voting server stopped.",
+            status_color=WARNING)
+
+    def _on_close(self):
+        """Clean shutdown: stop server, cancel polls, destroy window."""
+        self._stop_server()
+        if self._poll_id:
+            self.after_cancel(self._poll_id)
+        self.destroy()
 
 
 if __name__ == "__main__":

@@ -14,15 +14,16 @@ asymmetric encryption, SHA-256 hashing, and digital signatures.
 
 ### Architecture
 
-| Component          | File                  | Role                                                  |
-|--------------------|-----------------------|-------------------------------------------------------|
-| Admin Setup        | `admin_setup.py`      | Register candidates and voters, generate server keys  |
-| Voter Key Gen      | `generate_keys.py`    | Each voter generates their own RSA key pair           |
-| Crypto Primitives  | `crypto_utils.py`     | RSA keygen, encrypt/decrypt, hash, sign/verify        |
-| Voting Server      | `voting_server.py`    | TCP server — verify, decrypt, and tally votes         |
-| CLI Client         | `voter_client.py`     | Command-line voter interface + shared client logic     |
-| GUI Client (Bonus) | `voter_client_gui.py` | Graphical voter interface (CustomTkinter)             |
-| Admin GUI (Bonus)  | `admin_gui.py`        | Live admin dashboard with results and controls        |
+| Component          | File                   | Role                                                  |
+|--------------------| -----------------------|-------------------------------------------------------|
+| Launcher           | `launcher.py`          | Main entry point — launches all other components      |
+| Setup GUI          | `admin_setup_gui.py`   | Register candidates and voters, generate server keys  |
+| Key Gen GUI        | `generate_keys_gui.py` | Each voter generates their own RSA key pair           |
+| Crypto Primitives  | `crypto_utils.py`      | RSA keygen, encrypt/decrypt, hash, sign/verify        |
+| Voting Server      | `voting_server.py`     | TCP server — verify, decrypt, and tally votes         |
+| Voter Client Logic | `voter_client.py`      | Shared client logic (encrypt, sign, send)             |
+| Voter GUI          | `voter_client_gui.py`  | Graphical voter interface (CustomTkinter)             |
+| Admin GUI          | `admin_gui.py`         | Admin dashboard — embeds the server, live results     |
 
 ### Cryptographic Flow
 
@@ -242,26 +243,24 @@ Despite its security features, this system has several acknowledged limitations:
 
 ---
 
-## 9. How to Run
+### Quick Start
 
-### Prerequisites
-
-- **Python 3.8+**
-- **CustomTkinter** — install with `pip install customtkinter` (required for the
-  GUI interfaces).
-
-### Step 1 — Election Setup (Admin)
-
-The admin runs the setup script to generate server keys and register
-participants:
+Double-click **`Start.bat`** (Windows) or run:
 
 ```bash
-python admin_setup.py
+python launcher.py
 ```
 
-You will be prompted to enter:
-1. The number of candidates and their names.
-2. The number of voters and their names.
+This opens the **Launcher** — a single window with buttons to open each
+component.  No terminal commands are needed for any step.
+
+### Step 1 — Election Setup
+
+From the launcher, click **Election Setup**.  In the setup interface:
+
+1. Type each candidate name and click **Add**.
+2. Type each voter name and click **Add**.
+3. Click **Create Election** to generate server keys and save everything.
 
 This creates the following files in the `data/` directory:
 
@@ -274,72 +273,60 @@ This creates the following files in the `data/` directory:
 
 ### Step 2 — Key Generation (Each Voter)
 
-Each registered voter generates their own RSA key pair:
+From the launcher, click **Generate My Keys**:
 
-```bash
-python generate_keys.py
-```
+1. Enter your registered name.
+2. Click **Generate Keys**.
+3. Your private key is saved locally; your public key is registered.
 
-Enter your registered name when prompted.  This:
-- Saves your private key to `data/keys/<name>_private.json`.
-- Registers your public key in `voters.json`.
+Repeat for each voter.
 
-Repeat this step for each voter.
+### Step 3 — Launch the Admin Panel
 
-### Step 3 — Start the Voting Server
-
-In a **separate terminal**, start the server:
-
-```bash
-python voting_server.py
-```
-
-The server listens on `localhost:5555` and waits for incoming votes.
+From the launcher, click **Admin Panel**.  The admin panel displays a **server
+control bar** at the top.  Click **Start Server** to launch the voting server on
+`localhost:5555`.  A green indicator confirms the server is running.
 
 ### Step 4 — Cast Votes
 
-Voters can use either the **CLI** or the **GUI** client:
+From the launcher, click **Voter Interface**:
 
-**Option A — Command Line:**
-```bash
-python voter_client.py
-```
-Enter your name, then select a candidate by number.
-
-**Option B — Graphical Interface:**
-```bash
-python voter_client_gui.py
-```
 1. Enter your name on the login page and click **Log In**.
 2. Select a candidate using the radio buttons and click **Cast Vote**.
 3. Confirm your choice on the confirmation page.
 
-### Step 5 — Monitor and Close (Admin)
+### Step 5 — Monitor and Close (Admin Panel)
 
-Launch the admin dashboard:
+From the admin panel, the admin can:
+- **Start / Stop the server** using the server control bar.
+- **View live results** with animated progress bars and voter turnout.
+- **Manually end the election** (triggers a runoff round if there is a tie).
+- **Reset the election** (automatically stops the server first).
 
-```bash
-python admin_gui.py
-```
-
-From here, the admin can:
-- View live results with animated progress bars.
-- Manually end the election (triggers runoff if tied).
-- Reset the election data.
-
-The election also **closes automatically** when all voters have voted.
+The election also **closes automatically** when all registered voters have voted.
+Closing the admin panel window automatically stops the server.
 
 ---
 
 ## 10. Bonus Features
 
-- **Graphical User Interface:** Two CustomTkinter-based interfaces with a clean
-  light theme, card-based layouts, and smooth ease-out animations:
+- **Graphical User Interface:** All interactions are handled through
+  CustomTkinter-based GUIs with a clean light theme, card-based layouts, and
+  smooth animations:
+  - `launcher.py` — Central entry point with buttons for each component.
+  - `admin_setup_gui.py` — Visual election setup (add/remove candidates and
+    voters, generate server keys).
+  - `generate_keys_gui.py` — Per-voter key generation with success feedback.
   - `voter_client_gui.py` — Multi-page voting flow (login → vote → confirm →
     result) with automatic state polling and runoff round detection.
-  - `admin_gui.py` — Live admin dashboard with animated progress bars, inline
-    status messages, and threaded network calls to prevent UI freezing.
+  - `admin_gui.py` — Full admin dashboard with integrated server control
+    (start/stop), animated progress bars, inline status messages, and threaded
+    network calls to prevent UI freezing.
+
+- **Integrated Server:** The voting server is embedded directly in the admin
+  panel and runs in a background thread.  No separate terminal is needed — the
+  admin starts and stops the server with a single button click.
 
 - **Persistence:** The server saves the complete election state (tally, voted
   names, current round, active candidates) to `data/results.json` after every
-  vote, allowing it to survive server restarts without losing any data.
+  vote, allowing it to survive restarts without losing any data.
