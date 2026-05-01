@@ -11,10 +11,10 @@ import customtkinter as ctk
 
 from voter_client import cast_vote
 
-# ─── Theme ───────────────────────────────────────────────────────────────────
+
 ctk.set_appearance_mode("light")
 
-# ─── Palette ─────────────────────────────────────────────────────────────────
+
 BG        = "#F3F4F6"
 CARD      = "#FFFFFF"
 BORDER    = "#E5E7EB"
@@ -28,7 +28,7 @@ TEXT_SUB  = "#6B7280"
 HEADER_BG = "#1E293B"
 HEADER_FG = "#FFFFFF"
 
-# ─── Paths ───────────────────────────────────────────────────────────────────
+
 DATA_DIR        = os.path.join(os.path.dirname(__file__), "data")
 CANDIDATES_FILE = os.path.join(DATA_DIR, "candidates.json")
 VOTERS_FILE     = os.path.join(DATA_DIR, "voters.json")
@@ -63,7 +63,7 @@ class VoterApp(ctk.CTk):
         else:
             self._show_login_page()
 
-    # ── helpers ──────────────────────────────────────────────────────────
+  
 
     def _load_data(self):
         errors = []
@@ -158,7 +158,7 @@ class VoterApp(ctk.CTk):
         for w in self._container.winfo_children():
             w.destroy()
 
-    # ── shared widgets ───────────────────────────────────────────────────
+   
 
     def _header(self, parent, subtitle=""):
         h = 74 if subtitle else 60
@@ -195,9 +195,7 @@ class VoterApp(ctk.CTk):
         widget.pack_configure(pady=(20 + offset, 10))
         self.after(delay, self._fade_in, widget, steps, delay, step + 1)
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  Election Closed
-    # ══════════════════════════════════════════════════════════════════════
+ 
 
     def _show_closed_message(self):
         self._clear()
@@ -217,9 +215,7 @@ class VoterApp(ctk.CTk):
                       font=ctk.CTkFont(family=FONT, size=13, weight="bold"),
                       command=self.destroy).pack(fill="x", padx=24, pady=(0, 24))
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  Login
-    # ══════════════════════════════════════════════════════════════════════
+   
 
     def _show_login_page(self):
         self._reload_state()
@@ -284,9 +280,7 @@ class VoterApp(ctk.CTk):
         self._voter_name = name
         self._show_voting_page()
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  Voting
-    # ══════════════════════════════════════════════════════════════════════
+   
 
     def _show_voting_page(self):
         self._reload_state()
@@ -363,9 +357,7 @@ class VoterApp(ctk.CTk):
         # Show inline confirmation page instead of popup
         self._show_confirm_vote(cand)
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  Vote Confirmation (replaces messagebox.askyesno)
-    # ══════════════════════════════════════════════════════════════════════
+  
 
     def _show_confirm_vote(self, candidate):
         self._clear()
@@ -439,9 +431,7 @@ class VoterApp(ctk.CTk):
         msg = resp.get("message", "No response from server.")
         self._show_result("success" if st == "accepted" else "rejected", msg)
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  Result
-    # ══════════════════════════════════════════════════════════════════════
+
 
     def _show_result(self, kind, message):
         self._clear()
