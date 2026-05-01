@@ -16,10 +16,10 @@ import customtkinter as ctk
 
 from crypto_utils import generate_keypair
 
-# ─── Theme ───────────────────────────────────────────────────────────────────
+
 ctk.set_appearance_mode("light")
 
-# ─── Palette (matches other interfaces) ──────────────────────────────────────
+
 BG        = "#F3F4F6"
 CARD      = "#FFFFFF"
 BORDER    = "#E5E7EB"
@@ -33,7 +33,7 @@ TEXT_SUB  = "#6B7280"
 HEADER_BG = "#1E293B"
 HEADER_FG = "#FFFFFF"
 
-# ─── Paths ───────────────────────────────────────────────────────────────────
+
 DATA_DIR         = os.path.join(os.path.dirname(__file__), "data")
 SERVER_PUB_FILE  = os.path.join(DATA_DIR, "server_public_key.json")
 SERVER_PRIV_FILE = os.path.join(DATA_DIR, "server_private_key.json")
@@ -60,7 +60,7 @@ class SetupApp(ctk.CTk):
 
         self._show_setup_page()
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    
 
     def _header(self, parent):
         bar = ctk.CTkFrame(parent, fg_color=HEADER_BG, height=60, corner_radius=0)
@@ -84,9 +84,7 @@ class SetupApp(ctk.CTk):
         for w in self._container.winfo_children():
             w.destroy()
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  Setup Page
-    # ══════════════════════════════════════════════════════════════════════
+  
 
     def _show_setup_page(self):
         self._clear()
@@ -95,7 +93,7 @@ class SetupApp(ctk.CTk):
         content = ctk.CTkFrame(self._container, fg_color="transparent")
         content.pack(fill="both", expand=True, padx=28, pady=16)
 
-        # ── Pinned bottom: status + Create button (pack FIRST) ──────────
+    
         bottom = ctk.CTkFrame(content, fg_color="transparent")
         bottom.pack(side="bottom", fill="x", pady=(10, 0))
 
@@ -119,7 +117,7 @@ class SetupApp(ctk.CTk):
         cards_area.grid_rowconfigure(1, weight=1)
         cards_area.grid_columnconfigure(0, weight=1)
 
-        # ── Candidates card (top half) ──────────────────────────────────
+        
         cand_card = self._card(cards_area, "CANDIDATES")
         cand_card.grid(row=0, column=0, sticky="nsew", pady=(0, 5))
 
@@ -149,7 +147,7 @@ class SetupApp(ctk.CTk):
                      font=ctk.CTkFont(family=FONT, size=10),
                      text_color=ERROR).pack(padx=16, pady=(0, 6))
 
-        # ── Voters card (bottom half) ───────────────────────────────────
+        
         voter_card = self._card(cards_area, "VOTERS")
         voter_card.grid(row=1, column=0, sticky="nsew", pady=(5, 0))
 
@@ -186,7 +184,7 @@ class SetupApp(ctk.CTk):
         self._refresh_cand_list()
         self._refresh_voter_list()
 
-    # ── List management ─────────────────────────────────────────────────
+    
 
     def _add_candidate(self):
         name = self._cand_entry.get().strip()
@@ -256,7 +254,7 @@ class SetupApp(ctk.CTk):
                           command=lambda n=name: self._remove_voter(n)
                           ).pack(side="right", padx=4, pady=4)
 
-    # ── Create election ─────────────────────────────────────────────────
+   
 
     def _on_create(self):
         if len(self._candidates) < 2:
@@ -304,9 +302,7 @@ class SetupApp(ctk.CTk):
         self._status_msg.set(f"Error: {msg}")
         self._status_label.configure(text_color=ERROR)
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  Success Page
-    # ══════════════════════════════════════════════════════════════════════
+
 
     def _show_success(self):
         self._clear()
