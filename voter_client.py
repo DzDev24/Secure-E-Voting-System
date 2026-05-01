@@ -30,9 +30,7 @@ HOST = "localhost"
 PORT = 5555
 
 
-# ---------------------------------------------------------------------------
-# Wire protocol helpers (must match voting_server.py)
-# ---------------------------------------------------------------------------
+
 
 def send_msg(sock: socket.socket, data: dict) -> None:
     payload = json.dumps(data).encode("utf-8")
@@ -69,9 +67,7 @@ def _load_json(path: str, label: str):
         ) from exc
 
 
-# ---------------------------------------------------------------------------
-# Core vote-casting logic (also used by the GUI)
-# ---------------------------------------------------------------------------
+
 
 def cast_vote(voter_name: str, candidate_name: str) -> dict:
     """Encrypt, sign, and send a vote to the server.
@@ -157,9 +153,6 @@ def reset_all():
         shutil.rmtree(DATA_DIR)
 
 
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 
 def _cli() -> None:
     print("=== Secure E-Voting System ===\n")
