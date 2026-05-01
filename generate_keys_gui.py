@@ -14,10 +14,10 @@ import customtkinter as ctk
 
 from crypto_utils import generate_keypair
 
-# ─── Theme ───────────────────────────────────────────────────────────────────
+
 ctk.set_appearance_mode("light")
 
-# ─── Palette ─────────────────────────────────────────────────────────────────
+
 BG        = "#F3F4F6"
 CARD      = "#FFFFFF"
 BORDER    = "#E5E7EB"
@@ -30,7 +30,7 @@ TEXT_SUB  = "#6B7280"
 HEADER_BG = "#1E293B"
 HEADER_FG = "#FFFFFF"
 
-# ─── Paths ───────────────────────────────────────────────────────────────────
+
 DATA_DIR    = os.path.join(os.path.dirname(__file__), "data")
 KEYS_DIR    = os.path.join(DATA_DIR, "keys")
 VOTERS_FILE = os.path.join(DATA_DIR, "voters.json")
@@ -52,7 +52,7 @@ class KeyGenApp(ctk.CTk):
 
         self._show_input_page()
 
-    # ── helpers ──────────────────────────────────────────────────────────
+   
 
     def _header(self, parent):
         bar = ctk.CTkFrame(parent, fg_color=HEADER_BG, height=60, corner_radius=0)
@@ -76,9 +76,7 @@ class KeyGenApp(ctk.CTk):
         for w in self._container.winfo_children():
             w.destroy()
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  Input Page
-    # ══════════════════════════════════════════════════════════════════════
+   
 
     def _show_input_page(self):
         self._clear()
@@ -118,7 +116,7 @@ class KeyGenApp(ctk.CTk):
                      text_color=ERROR, wraplength=360
                      ).pack(fill="x", padx=24, pady=(8, 20))
 
-    # ── Logic ────────────────────────────────────────────────────────────
+    
 
     def _on_generate(self):
         name = self._name_var.get().strip()
@@ -178,9 +176,7 @@ class KeyGenApp(ctk.CTk):
         self._gen_btn.configure(state="normal", text="Generate Keys")
         self._msg_var.set(f"Error: {msg}")
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  Success Page
-    # ══════════════════════════════════════════════════════════════════════
+ 
 
     def _show_success(self, name):
         self._clear()
