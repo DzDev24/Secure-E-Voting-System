@@ -16,10 +16,10 @@ import customtkinter as ctk
 from voter_client import close_election, get_results, reset_votes, reset_all
 from voting_server import VotingServer
 
-# ─── Theme ───────────────────────────────────────────────────────────────────
+
 ctk.set_appearance_mode("light")
 
-# ─── Palette ─────────────────────────────────────────────────────────────────
+
 BG        = "#F3F4F6"
 CARD      = "#FFFFFF"
 BORDER    = "#E5E7EB"
@@ -38,7 +38,7 @@ PURPLE_HV = "#6D28D9"
 BAR_COLORS = ["#4F46E5", "#0891B2", "#DB2777", "#7C3AED", "#059669",
               "#D97706", "#EA580C", "#DC2626", "#0284C7", "#9333EA"]
 
-# ─── Paths ───────────────────────────────────────────────────────────────────
+
 DATA_DIR     = os.path.join(os.path.dirname(__file__), "data")
 RESULTS_FILE = os.path.join(DATA_DIR, "results.json")
 VOTERS_FILE  = os.path.join(DATA_DIR, "voters.json")
@@ -79,7 +79,7 @@ class AdminApp(ctk.CTk):
         else:
             self._show_dashboard()
 
-    # ── helpers ──────────────────────────────────────────────────────────
+   
 
     def _is_election_closed(self):
         if os.path.exists(RESULTS_FILE):
@@ -106,7 +106,7 @@ class AdminApp(ctk.CTk):
         for w in self._container.winfo_children():
             w.destroy()
 
-    # ── shared widgets ───────────────────────────────────────────────────
+   
 
     def _header(self, parent):
         hdr = ctk.CTkFrame(parent, fg_color=HEADER_BG, corner_radius=0, height=60)
@@ -137,9 +137,7 @@ class AdminApp(ctk.CTk):
         widget.pack_configure(pady=(12 + offset, 8))
         self.after(delay, self._fade_in, widget, steps, delay, step + 1)
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  Dashboard
-    # ══════════════════════════════════════════════════════════════════════
+  
 
     def _show_dashboard(self, status_msg=None, status_color=None):
         self._clear()
@@ -148,7 +146,7 @@ class AdminApp(ctk.CTk):
         content = ctk.CTkFrame(self._container, fg_color="transparent")
         content.pack(fill="both", expand=True, padx=28, pady=16)
 
-        # ── Server control bar ──────────────────────────────────────
+        
         srv_frame = ctk.CTkFrame(content, fg_color=CARD, corner_radius=10,
                                   border_width=1, border_color=BORDER)
         srv_frame.pack(fill="x", pady=(0, 10))
@@ -180,7 +178,7 @@ class AdminApp(ctk.CTk):
                           font=ctk.CTkFont(family=FONT, size=11, weight="bold"),
                           command=self._start_server).pack(side="right")
 
-        # ── Status message banner ───────────────────────────────────
+        
         if status_msg:
             msg_frame = ctk.CTkFrame(content, fg_color="#F0FDF4" if status_color == SUCCESS
                                      else "#FEF3C7" if status_color == WARNING
@@ -362,9 +360,7 @@ class AdminApp(ctk.CTk):
         except Exception:
             pass  # Widget was destroyed, stop animation silently
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  Final Results
-    # ══════════════════════════════════════════════════════════════════════
+   
 
     def _show_final_results(self, data):
         self._clear()
@@ -414,9 +410,7 @@ class AdminApp(ctk.CTk):
                       command=self.destroy).pack(side="left", expand=True, fill="x",
                                                   padx=(4, 0))
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  Inline Confirmation Pages (replace all messageboxes)
-    # ══════════════════════════════════════════════════════════════════════
+    
 
     def _show_confirm_page(self, title, message, on_confirm, on_cancel,
                            confirm_text="Confirm", confirm_color=ACCENT,
@@ -454,9 +448,7 @@ class AdminApp(ctk.CTk):
 
         self._fade_in(card)
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  Actions
-    # ══════════════════════════════════════════════════════════════════════
+    
 
     def _on_end_election(self):
         self._show_confirm_page(
@@ -591,9 +583,7 @@ class AdminApp(ctk.CTk):
             status_msg="All election data has been deleted. Run admin_setup.py to set up a new election.",
             status_color=SUCCESS)
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  Server Control
-    # ══════════════════════════════════════════════════════════════════════
+  
 
     def _is_server_running(self):
         """Check if the embedded server thread is alive."""
