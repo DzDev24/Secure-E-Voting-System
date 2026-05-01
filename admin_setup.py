@@ -37,9 +37,7 @@ def setup(
     """
     os.makedirs(DATA_DIR, exist_ok=True)
 
-    # ------------------------------------------------------------------
-    # Candidates
-    # ------------------------------------------------------------------
+    
     if interactive:
         num_candidates = int(input("Enter number of candidates [3]: ").strip() or 3)
         candidate_names = []
@@ -54,9 +52,7 @@ def setup(
         json.dump(candidate_names, fh, indent=2)
     print(f"[+] Candidates saved: {candidate_names}")
 
-    # ------------------------------------------------------------------
-    # Server key pair
-    # ------------------------------------------------------------------
+    
     print("[*] Generating server RSA key pair …", end=" ", flush=True)
     server_pub, server_priv = generate_keypair(bits)
     with open(SERVER_PUB_FILE, "w") as fh:
@@ -67,9 +63,7 @@ def setup(
     print(f"    Public key  → {SERVER_PUB_FILE}  (shared with voters)")
     print(f"    Private key → {SERVER_PRIV_FILE} (server only)")
 
-    # ------------------------------------------------------------------
-    # Voters — register names only (voters generate their own keys)
-    # ------------------------------------------------------------------
+   
     if interactive:
         num_voters = int(input("Enter number of voters [30]: ").strip() or 30)
         voter_names = []
