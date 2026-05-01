@@ -10,10 +10,10 @@ import subprocess
 import sys
 import customtkinter as ctk
 
-# ─── Theme ───────────────────────────────────────────────────────────────────
+
 ctk.set_appearance_mode("light")
 
-# ─── Palette ─────────────────────────────────────────────────────────────────
+
 BG        = "#F3F4F6"
 CARD      = "#FFFFFF"
 BORDER    = "#E5E7EB"
@@ -44,7 +44,7 @@ class LauncherApp(ctk.CTk):
         self.resizable(False, False)
         self.configure(fg_color=BG)
 
-        # ── Header ──────────────────────────────────────────────────────
+        
         header = ctk.CTkFrame(self, fg_color=HEADER_BG, height=74, corner_radius=0)
         header.pack(fill="x")
         header.pack_propagate(False)
@@ -58,7 +58,7 @@ class LauncherApp(ctk.CTk):
                      font=ctk.CTkFont(family=FONT, size=11),
                      text_color="#94A3B8").pack()
 
-        # ── Content ─────────────────────────────────────────────────────
+       
         content = ctk.CTkFrame(self, fg_color="transparent")
         content.pack(fill="both", expand=True, padx=32, pady=24)
 
