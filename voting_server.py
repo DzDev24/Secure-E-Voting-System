@@ -40,9 +40,7 @@ HOST = "localhost"
 PORT = 5555
 
 
-# ---------------------------------------------------------------------------
-# Wire protocol helpers
-# ---------------------------------------------------------------------------
+
 
 def send_msg(sock: socket.socket, data: dict) -> None:
     """Send a JSON message prefixed with a 4-byte big-endian length."""
@@ -82,9 +80,6 @@ def _load_json(path: str, label: str):
         ) from exc
 
 
-# ---------------------------------------------------------------------------
-# Server
-# ---------------------------------------------------------------------------
 
 class VotingServer:
     """Multi-threaded e-voting TCP server."""
@@ -108,7 +103,7 @@ class VotingServer:
         # State
         self._round = 1
         self._active_candidates = list(self.candidates)
-        self.voted_ids: set = set()  # tracks voter names
+        self.voted_ids: set = set()  
         self._election_closed = False
         if os.path.exists(RESULTS_FILE):
             try:
@@ -135,9 +130,7 @@ class VotingServer:
         self._running = True
         self._server_sock = None
 
-    # ------------------------------------------------------------------
-    # Public interface
-    # ------------------------------------------------------------------
+    
 
     def start(self) -> None:
         """Bind and start listening; blocks until the election is closed."""
@@ -169,9 +162,7 @@ class VotingServer:
         with self._lock:
             return dict(self.tally)
 
-    # ------------------------------------------------------------------
-    # Connection handler
-    # ------------------------------------------------------------------
+
 
     def _handle_client(self, conn: socket.socket, addr) -> None:
         with conn:
@@ -245,11 +236,8 @@ class VotingServer:
         if not voter_name or encrypted_vote is None or signature is None:
             return {"status": "rejected", "message": "Malformed vote packet."}
 
-        # ── PHASE 1: Identity Verification (knows WHO, not WHAT) ─────
-        # The encrypted vote is treated as an opaque ciphertext blob;
-        # its content is never inspected or decrypted during this phase.
 
-        # 1. Identity check — retrieve the voter's public key
+        
         voter_record = self.voters.get(voter_name)
         if voter_record is None:
             return {"status": "rejected", "message": "Unknown voter name."}
@@ -258,24 +246,21 @@ class VotingServer:
         if not voter_pub:
             return {"status": "rejected", "message": "Voter has not generated keys yet."}
 
-        # 2. Signature verification — confirms authenticity and integrity
+        
         if not verify(encrypted_vote, signature, voter_pub):
             return {"status": "rejected", "message": "Invalid signature."}
 
-        # 3. Anti-duplicate — ensure this voter has not already voted
+        
         with self._lock:
             if voter_name in self.voted_ids:
                 return {"status": "rejected", "message": "Voter has already voted."}
-            self.voted_ids.add(voter_name)  # tentatively mark as voted
+            self.voted_ids.add(voter_name)  
 
-        # ── PHASE 2: Anonymous Ballot Counting (knows WHAT, not WHO) ─
-        # voter_name is deliberately NOT forwarded to the counting method.
-        # This separation ensures the tallying logic cannot correlate a
-        # ballot with any specific voter, providing relative anonymity.
+        
 
         result = self._count_ballot(encrypted_vote)
 
-        # Roll back if counting failed so the voter may retry
+        
         if result["status"] != "accepted":
             with self._lock:
                 self.voted_ids.discard(voter_name)
@@ -296,22 +281,22 @@ class VotingServer:
             Response dict with ``status`` and ``message`` keys.
         """
         with self._lock:
-            # 4. Decrypt — M = C^d mod n using the server's private key
+            
             try:
                 plaintext_int = decrypt(encrypted_vote, self.server_priv)
                 candidate_name = int_to_text(plaintext_int)
             except Exception:
                 return {"status": "rejected", "message": "Decryption failed."}
 
-            # 5. Validate candidate name against the active candidate list
+            
             if candidate_name not in self._active_candidates:
                 return {"status": "rejected", "message": "Invalid candidate."}
 
-            # 6. Tally — increment the anonymous candidate counter
+            
             self.tally[candidate_name] += 1
             self._persist_state()
 
-            # 7. Auto-close — if every registered voter (with keys) has voted
+            
             registered_with_keys = sum(
                 1 for v in self.voters.values() if v.get("public_key")
             )
@@ -331,7 +316,7 @@ class VotingServer:
         tied = [c for c, v in self.tally.items() if v == max_votes]
 
         if len(tied) > 1:
-            # Runoff — done inline (lock is already held, can't re-acquire)
+            
             self._round += 1
             self._active_candidates = tied
             self.tally = {c: 0 for c in tied}
@@ -344,9 +329,7 @@ class VotingServer:
             self._print_results()
             print("\n*** AUTO-CLOSE: 100% turnout — election closed ***")
 
-    # ------------------------------------------------------------------
-    # Results
-    # ------------------------------------------------------------------
+
 
     def _results_str(self) -> str:
         header = f"=== Final Results (Round {self._round}) ==="
@@ -384,9 +367,6 @@ class VotingServer:
         print(f"\n*** RUNOFF: Round {self._round} with {tied_candidates} ***")
 
 
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     server = None
