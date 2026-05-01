@@ -14,9 +14,7 @@ import hashlib
 import random
 
 
-# ---------------------------------------------------------------------------
-# Primality
-# ---------------------------------------------------------------------------
+
 
 def is_prime(n: int, k: int = 10) -> bool:
     """Miller-Rabin primality test.
@@ -72,9 +70,7 @@ def generate_prime(bits: int) -> int:
             return candidate
 
 
-# ---------------------------------------------------------------------------
-# Mathematical helpers
-# ---------------------------------------------------------------------------
+
 
 def gcd(a: int, b: int) -> int:
     """Return the GCD of a and b using the Euclidean algorithm."""
@@ -109,9 +105,7 @@ def mod_inverse(e: int, phi: int) -> int:
     return old_s % phi
 
 
-# ---------------------------------------------------------------------------
-# RSA key generation
-# ---------------------------------------------------------------------------
+
 
 def generate_keypair(bits: int = 512):
     """Generate an RSA key pair.
@@ -123,12 +117,8 @@ def generate_keypair(bits: int = 512):
         Tuple (public_key, private_key) where each key is a dict with keys
         ``e`` (or ``d``) and ``n``.
     """
-    # RSA security relies on the computational difficulty of factoring
-    # n = p * q.  The public exponent e and private exponent d form a
-    # mathematical trapdoor: encryption with e is fast, but reversing
-    # it without d is as hard as factoring n (Confusion).
-    e = 65537  # 2^16 + 1 — standard choice; its low Hamming weight
-               # makes modular exponentiation fast while staying secure.
+    
+    e = 65537  
 
     while True:
         p = generate_prime(bits)
@@ -146,9 +136,7 @@ def generate_keypair(bits: int = 512):
     return public_key, private_key
 
 
-# ---------------------------------------------------------------------------
-# RSA encryption / decryption
-# ---------------------------------------------------------------------------
+
 
 def encrypt(message_int: int, pub_key: dict) -> int:
     """RSA-encrypt an integer: C = M^e mod n.
@@ -181,9 +169,7 @@ def decrypt(cipher_int: int, priv_key: dict) -> int:
     return pow(cipher_int, priv_key["d"], priv_key["n"])
 
 
-# ---------------------------------------------------------------------------
-# Text ↔ integer conversion
-# ---------------------------------------------------------------------------
+
 
 def text_to_int(text: str) -> int:
     """Convert a UTF-8 string to a non-negative integer (big-endian bytes).
@@ -210,9 +196,7 @@ def int_to_text(number: int) -> str:
     return number.to_bytes(byte_length, byteorder="big").decode("utf-8")
 
 
-# ---------------------------------------------------------------------------
-# Hashing
-# ---------------------------------------------------------------------------
+
 
 def sha256_hash(data) -> int:
     """Compute SHA-256 of *data* and return the digest as an integer.
@@ -237,9 +221,6 @@ def sha256_hash(data) -> int:
     return int.from_bytes(digest, byteorder="big")
 
 
-# ---------------------------------------------------------------------------
-# Digital signatures
-# ---------------------------------------------------------------------------
 
 def sign(message_int: int, priv_key: dict) -> int:
     """Sign a message: S = hash(message)^d mod n.
