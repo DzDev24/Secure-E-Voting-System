@@ -66,6 +66,7 @@ class VoterApp(ctk.CTk):
   
 
     def _load_data(self):
+        """Loads data files from disk into memory. Returns False if files are missing."""
         errors = []
         try:
             with open(CANDIDATES_FILE) as f:
@@ -77,8 +78,9 @@ class VoterApp(ctk.CTk):
                 self._voters = json.load(f)
         except FileNotFoundError:
             errors.append("Voter registry not found.")
+            
         if errors:
-            # Show error in the GUI itself instead of a popup
+            # Show error inside the GUI itself instead of an ugly system popup
             self._container = ctk.CTkFrame(self, fg_color="transparent")
             self._container.pack(fill="both", expand=True)
             self._header(self._container)
@@ -98,6 +100,8 @@ class VoterApp(ctk.CTk):
                           font=ctk.CTkFont(family=FONT, size=13, weight="bold"),
                           command=self.destroy).pack(fill="x", padx=24, pady=(0, 24))
             return False
+            
+        # Check if there is an active runoff round saved in the results file
         if os.path.exists(RESULTS_FILE):
             try:
                 with open(RESULTS_FILE) as f:
@@ -110,6 +114,7 @@ class VoterApp(ctk.CTk):
         return True
 
     def _is_election_closed(self):
+        """Helper to quickly check if the election was closed by the admin."""
         if os.path.exists(RESULTS_FILE):
             try:
                 with open(RESULTS_FILE) as f:
@@ -119,6 +124,7 @@ class VoterApp(ctk.CTk):
         return False
 
     def _has_voted(self, vid):
+        """Helper to check if the user has already voted."""
         if os.path.exists(RESULTS_FILE):
             try:
                 with open(RESULTS_FILE) as f:
@@ -128,6 +134,7 @@ class VoterApp(ctk.CTk):
         return False
 
     def _reload_state(self):
+        """Refresh current round and candidate list from disk before rendering UI."""
         self._current_round = 1
         if os.path.exists(RESULTS_FILE):
             try:
@@ -141,18 +148,27 @@ class VoterApp(ctk.CTk):
                 pass
 
     def _poll_state(self):
+        """Auto-refresh mechanism running every 3 seconds to check for runoffs or closures."""
         old_round = getattr(self, "_current_round", 1)
         self._reload_state()
+        
+        # If admin closed the election while voter was looking at the login screen
         if self._is_election_closed():
             self._show_closed_message()
             return
+            
+        # If a runoff round started while voter was looking at the screen
         if self._current_round != old_round:
             self._show_login_page()
             return
+            
+        # self.after(delay_ms, function) tells Tkinter to run a function in the future
         self._poll_id = self.after(3000, self._poll_state)
 
     def _clear(self):
+        """Wipes the screen clean. Also cancels any pending poll timers to prevent bugs."""
         if self._poll_id:
+            # Cancel the loop timer if we change screens
             self.after_cancel(self._poll_id)
             self._poll_id = None
         for w in self._container.winfo_children():
@@ -184,15 +200,24 @@ class VoterApp(ctk.CTk):
         return card
 
     def _fade_in(self, widget, steps=14, delay=35, step=0):
-        """Card slide-up with ease-out cubic curve."""
+        """Card slide-up animation with an ease-out cubic curve.
+        Uses a mathematical curve to make the animation start fast and end slowly (easing).
+        """
         total_offset = 30
         if step >= steps:
+            # Animation complete: lock widget in final position
             widget.pack_configure(pady=(20, 10))
             return
+            
+        # Calculate mathematical easing (1 - (1 - t)^3)
         t = step / steps
         eased = 1 - (1 - t) ** 3
         offset = int(total_offset * (1 - eased))
+        
+        # Update widget position
         widget.pack_configure(pady=(20 + offset, 10))
+        
+        # Call this function again after 'delay' milliseconds to process the next frame
         self.after(delay, self._fade_in, widget, steps, delay, step + 1)
 
  
@@ -277,6 +302,7 @@ class VoterApp(ctk.CTk):
         if self._has_voted(name):
             self._login_msg.set(f"'{name}' has already cast their vote.")
             return
+            
         self._voter_name = name
         self._show_voting_page()
 
@@ -295,6 +321,7 @@ class VoterApp(ctk.CTk):
         content = ctk.CTkFrame(self._container, fg_color="transparent")
         content.pack(fill="both", expand=True, padx=36, pady=16)
 
+        # Top bar showing who is logged in
         bar = ctk.CTkFrame(content, fg_color="transparent")
         bar.pack(fill="x", pady=(0, 10))
         ctk.CTkLabel(bar, text=f"{self._voter_name}",
@@ -314,7 +341,7 @@ class VoterApp(ctk.CTk):
                      text_color=TEXT_SUB, anchor="w"
                      ).pack(fill="x", padx=24, pady=(0, 10))
 
-        # Use scrollable frame only when there are many candidates
+        # Use a scrollable frame only if there are many candidates, to save space
         if len(self._candidates) > 6:
             cand_frame = ctk.CTkScrollableFrame(card, fg_color="transparent",
                                                  scrollbar_button_color=BORDER,
@@ -323,6 +350,7 @@ class VoterApp(ctk.CTk):
             cand_frame = ctk.CTkFrame(card, fg_color="transparent")
         cand_frame.pack(fill="both", expand=True, padx=16, pady=(0, 6))
 
+        # Radio buttons all share this one StringVar. When clicked, it stores the candidate's name.
         self._cand_var = ctk.StringVar(value="")
         for c in self._candidates:
             ctk.CTkRadioButton(
@@ -354,7 +382,8 @@ class VoterApp(ctk.CTk):
         if not cand:
             self._vote_msg.set("Please select a candidate before voting.")
             return
-        # Show inline confirmation page instead of popup
+            
+        # Show inline confirmation page instead of an annoying popup
         self._show_confirm_vote(cand)
 
   
@@ -374,7 +403,7 @@ class VoterApp(ctk.CTk):
                      font=ctk.CTkFont(family=FONT, size=12),
                      text_color=TEXT_SUB).pack(padx=24, pady=(0, 12))
 
-        # Highlighted candidate name
+        # Highlighted candidate name in a colored box
         name_frame = ctk.CTkFrame(card, fg_color="#EEF2FF", corner_radius=8,
                                   border_width=1, border_color="#C7D2FE")
         name_frame.pack(fill="x", padx=24, pady=(0, 12))
@@ -395,6 +424,7 @@ class VoterApp(ctk.CTk):
         btn_row = ctk.CTkFrame(card, fg_color="transparent")
         btn_row.pack(fill="x", padx=24, pady=(0, 24))
 
+        # The lambda here passes 'candidate' to the function securely when clicked
         ctk.CTkButton(btn_row, text="Confirm Vote", height=44, corner_radius=8,
                       fg_color=ACCENT, hover_color=ACCENT_HV,
                       font=ctk.CTkFont(family=FONT, size=14, weight="bold"),
@@ -414,6 +444,8 @@ class VoterApp(ctk.CTk):
         self.update_idletasks()
 
         try:
+            # Calls the backend function in voter_client.py
+            # This connects via TCP to send the vote
             resp = cast_vote(self._voter_name, candidate)
         except KeyError as exc:
             self._show_result("error", str(exc))
@@ -429,11 +461,14 @@ class VoterApp(ctk.CTk):
 
         st = resp.get("status", "unknown")
         msg = resp.get("message", "No response from server.")
+        
+        # Determine whether to show the green success tick or the orange rejection warning
         self._show_result("success" if st == "accepted" else "rejected", msg)
 
 
 
     def _show_result(self, kind, message):
+        """Displays the final success or error screen."""
         self._clear()
         self._header(self._container)
 
@@ -443,6 +478,7 @@ class VoterApp(ctk.CTk):
         card = self._card(content)
         card.pack(fill="x", pady=(20, 10))
 
+        # Python dictionary 'get' method used to quickly pick the right icon/color mapping
         icon, title, color = {
             "success":  ("✓", "VOTE ACCEPTED",  SUCCESS),
             "rejected": ("✗", "VOTE REJECTED",  WARNING),
@@ -460,6 +496,7 @@ class VoterApp(ctk.CTk):
                      font=ctk.CTkFont(family=FONT, size=12),
                      text_color=TEXT, wraplength=380, justify="center"
                      ).pack(padx=24, pady=(0, 4))
+                     
         if self._voter_name:
             ctk.CTkLabel(card, text=f"Voter: {self._voter_name}",
                          font=ctk.CTkFont(family=FONT, size=11),

@@ -15,8 +15,8 @@ Flow:
 
 import json
 import os
-import socket
-import struct
+import socket  # Used for network communication over TCP
+import struct  # Used to pack/unpack binary data (like the message length prefix)
 
 from crypto_utils import encrypt, sign, text_to_int
 
@@ -26,32 +26,46 @@ VOTERS_FILE = os.path.join(DATA_DIR, "voters.json")
 CANDIDATES_FILE = os.path.join(DATA_DIR, "candidates.json")
 KEYS_DIR = os.path.join(DATA_DIR, "keys")
 
+# The server listens on localhost at port 5555
 HOST = "localhost"
 PORT = 5555
 
 
-
-
 def send_msg(sock: socket.socket, data: dict) -> None:
+    """Send a JSON dictionary over a socket."""
+    # Convert dictionary to a JSON string, then encode it to raw bytes
     payload = json.dumps(data).encode("utf-8")
+    
+    # struct.pack(">I", length) creates a 4-byte big-endian integer header.
+    # This tells the server exactly how many bytes to read before processing the JSON.
     sock.sendall(struct.pack(">I", len(payload)) + payload)
 
 
 def recv_msg(sock: socket.socket) -> dict:
+    """Read a JSON dictionary from a socket."""
+    # First, read exactly 4 bytes to get the length prefix
     raw_len = _recv_exact(sock, 4)
     if not raw_len:
         return {}
+        
+    # Unpack the 4 bytes back into a normal integer
     (length,) = struct.unpack(">I", raw_len)
+    
+    # Read exactly 'length' bytes of JSON payload
     payload = _recv_exact(sock, length)
+    
+    # Decode bytes to string, then parse the JSON string back into a dictionary
     return json.loads(payload.decode("utf-8"))
 
 
 def _recv_exact(sock: socket.socket, n: int) -> bytes:
+    """Helper function to reliably read exactly n bytes from the socket."""
     buf = b""
     while len(buf) < n:
+        # Keep reading chunks until we have exactly 'n' bytes
         chunk = sock.recv(n - len(buf))
         if not chunk:
-            return b""
+            return b""  # Connection closed abruptly
         buf += chunk
     return buf
 
@@ -67,23 +81,8 @@ def _load_json(path: str, label: str):
         ) from exc
 
 
-
-
 def cast_vote(voter_name: str, candidate_name: str) -> dict:
-    """Encrypt, sign, and send a vote to the server.
-
-    Args:
-        voter_name: Registered voter name (e.g. ``"Nazim"``).
-        candidate_name: Name of the chosen candidate.
-
-    Returns:
-        Server response dict (with keys ``status`` and ``message``).
-
-    Raises:
-        KeyError: If the voter name is not in the local registry.
-        FileNotFoundError: If required data files are missing.
-        ConnectionRefusedError: If the server is not reachable.
-    """
+    """Encrypt, sign, and send a vote to the server."""
     # Load server public key
     server_data = _load_json(SERVER_PUB_FILE, "Server public key file")
     server_pub = server_data["public_key"]
@@ -99,14 +98,21 @@ def cast_vote(voter_name: str, candidate_name: str) -> dict:
     priv_path = os.path.join(KEYS_DIR, f"{voter_name}_private.json")
     if not os.path.exists(priv_path):
         raise KeyError(f"Private key file not found for '{voter_name}'. Run generate_keys.py first.")
+    
     with open(priv_path) as fh:
         voter_priv = json.load(fh)["private_key"]
 
-    # Encrypt & sign
+    # CRYPTOGRAPHY IN ACTION:
+    # 1. Convert candidate name string into a big number
     plaintext_int = text_to_int(candidate_name)
+    
+    # 2. Encrypt the vote so only the server can read it (Confidentiality)
     encrypted_vote = encrypt(plaintext_int, server_pub)
+    
+    # 3. Sign the encrypted vote using the voter's private key (Authenticity & Integrity)
     signature = sign(encrypted_vote, voter_priv)
 
+    # Pack everything into a "JSON Envelope"
     envelope = {
         "action": "vote",
         "voter_name": voter_name,
@@ -115,6 +121,7 @@ def cast_vote(voter_name: str, candidate_name: str) -> dict:
     }
 
     # Send over TCP
+    # create_connection automatically establishes a TCP socket connection
     with socket.create_connection((HOST, PORT), timeout=10) as sock:
         send_msg(sock, envelope)
         response = recv_msg(sock)
@@ -144,17 +151,14 @@ def reset_votes():
 
 
 def reset_all():
-    """Delete all data files (keys, voters, candidates, results).
-
-    After calling this, ``admin_setup.py`` must be run again.
-    """
-    import shutil
+    """Delete all data files (keys, voters, candidates, results)."""
+    import shutil  # Used to delete entire folders
     if os.path.isdir(DATA_DIR):
-        shutil.rmtree(DATA_DIR)
-
+        shutil.rmtree(DATA_DIR)  # Deletes the data directory and everything inside it
 
 
 def _cli() -> None:
+    """Command Line Interface (used if running without the GUI)."""
     print("=== Secure E-Voting System ===\n")
 
     voter_name = input("Enter your name: ").strip()
@@ -169,6 +173,7 @@ def _cli() -> None:
         return
 
     print("\nAvailable candidates:")
+    # enumerate gives us an automatic index counter for the list
     for idx, name in enumerate(candidates, start=1):
         print(f"  {idx}. {name}")
 

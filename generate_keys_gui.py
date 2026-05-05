@@ -9,7 +9,7 @@ Run:  python generate_keys_gui.py
 
 import json
 import os
-import threading
+import threading  # Required so RSA generation doesn't freeze the GUI
 import customtkinter as ctk
 
 from crypto_utils import generate_keypair
@@ -39,6 +39,7 @@ FONT = "Segoe UI"
 
 
 class KeyGenApp(ctk.CTk):
+    """Voter Key Generation Window."""
 
     def __init__(self):
         super().__init__()
@@ -73,6 +74,7 @@ class KeyGenApp(ctk.CTk):
         return frame
 
     def _clear(self):
+        """Clears out the main container to allow drawing the next page."""
         for w in self._container.winfo_children():
             w.destroy()
 
@@ -93,6 +95,7 @@ class KeyGenApp(ctk.CTk):
                      text_color=TEXT_SUB, justify="center"
                      ).pack(padx=24, pady=(12, 14))
 
+        # StringVar allows dynamic text updating in the UI
         self._name_var = ctk.StringVar()
         entry = ctk.CTkEntry(card, textvariable=self._name_var,
                              placeholder_text="Your registered name",
@@ -101,6 +104,8 @@ class KeyGenApp(ctk.CTk):
                              border_color=BORDER, fg_color="#F9FAFB")
         entry.pack(fill="x", padx=24, pady=(0, 14))
         entry.focus_set()
+        
+        # Pressing 'Enter' inside the text box activates the generate button automatically
         entry.bind("<Return>", lambda e: self._on_generate())
 
         self._gen_btn = ctk.CTkButton(
@@ -126,7 +131,7 @@ class KeyGenApp(ctk.CTk):
             self._msg_var.set("Please enter your name.")
             return
 
-        # Check voter registry
+        # Check voter registry exists
         if not os.path.exists(VOTERS_FILE):
             self._msg_var.set("Voter registry not found. Ask the admin to run Election Setup first.")
             return
@@ -142,43 +147,52 @@ class KeyGenApp(ctk.CTk):
             self._msg_var.set(f"Name '{name}' is not registered. Contact the admin.")
             return
 
+        # Check if keys were already created
         if voters[name].get("public_key"):
             self._msg_var.set(f"Keys for '{name}' have already been generated.")
             return
 
+        # Disable button to prevent clicking twice
         self._gen_btn.configure(state="disabled", text="Generating…")
         self._msg_var.set("Generating RSA key pair — please wait…")
-        self.update_idletasks()
+        self.update_idletasks()  # Force GUI to refresh before thread starts
 
+        # Launch the heavy math into a background thread
         threading.Thread(target=self._do_generate, args=(name, voters),
                          daemon=True).start()
 
     def _do_generate(self, name, voters):
+        """Worker thread to run math and save files without freezing the window."""
         try:
+            # 1024-bit RSA key generation takes a few seconds
             pub, priv = generate_keypair(1024)
 
-            # Save private key
+            # Save private key to the local computer
             os.makedirs(KEYS_DIR, exist_ok=True)
             priv_path = os.path.join(KEYS_DIR, f"{name}_private.json")
             with open(priv_path, "w") as fh:
                 json.dump({"private_key": priv}, fh, indent=2)
 
-            # Register public key
+            # Register public key in the "server" registry
             voters[name] = {"public_key": pub}
             with open(VOTERS_FILE, "w") as fh:
                 json.dump(voters, fh, indent=2)
 
+            # Send a command BACK to the main GUI thread to show success.
+            # (Direct UI calls from background threads cause crashes).
             self.after(0, lambda: self._show_success(name))
         except Exception as exc:
             self.after(0, lambda: self._show_error(str(exc)))
 
     def _show_error(self, msg):
+        # Re-enable the button if generation failed
         self._gen_btn.configure(state="normal", text="Generate Keys")
         self._msg_var.set(f"Error: {msg}")
 
  
 
     def _show_success(self, name):
+        """Build the success checkmark screen."""
         self._clear()
         self._header(self._container)
 

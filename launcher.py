@@ -6,14 +6,16 @@ Double-click Start.bat or run:  python launcher.py
 """
 
 import os
-import subprocess
+import subprocess  # Used to spawn new processes (run other python scripts)
 import sys
-import customtkinter as ctk
+import customtkinter as ctk  # Modern GUI library built on top of Tkinter
 
 
+# Set the overall theme of the GUI to light mode
 ctk.set_appearance_mode("light")
 
 
+# --- UI Color Palette ---
 BG        = "#F3F4F6"
 CARD      = "#FFFFFF"
 BORDER    = "#E5E7EB"
@@ -31,26 +33,31 @@ CYAN      = "#0891B2"
 CYAN_HV   = "#0E7490"
 
 FONT = "Segoe UI"
+# Get the absolute path of the directory containing this script
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 class LauncherApp(ctk.CTk):
+    """The main launcher window containing buttons to start other scripts."""
 
     def __init__(self):
-        super().__init__()
+        super().__init__()  # Initialize the parent CTk window class
         self.title("Secure E-Voting System")
-        self.geometry("420x480")
+        self.geometry("420x480")  # Set initial window size (width x height)
         self.minsize(380, 440)
-        self.resizable(False, False)
+        self.resizable(False, False)  # Prevent user from resizing the window
         self.configure(fg_color=BG)
 
-        
+        # Create a header frame at the top
         header = ctk.CTkFrame(self, fg_color=HEADER_BG, height=74, corner_radius=0)
-        header.pack(fill="x")
-        header.pack_propagate(False)
+        header.pack(fill="x")  # fill="x" makes it stretch horizontally
+        header.pack_propagate(False)  # Prevent header from shrinking to fit its contents
 
+        # Inner frame to center the text inside the header
         header_inner = ctk.CTkFrame(header, fg_color="transparent")
-        header_inner.pack(expand=True)
+        header_inner.pack(expand=True)  # expand=True centers it
+        
+        # Add titles to the header
         ctk.CTkLabel(header_inner, text="Secure E-Voting System",
                      font=ctk.CTkFont(family=FONT, size=18, weight="bold"),
                      text_color=HEADER_FG).pack()
@@ -58,11 +65,12 @@ class LauncherApp(ctk.CTk):
                      font=ctk.CTkFont(family=FONT, size=11),
                      text_color="#94A3B8").pack()
 
-       
+        # Main content area where buttons will go
         content = ctk.CTkFrame(self, fg_color="transparent")
         content.pack(fill="both", expand=True, padx=32, pady=24)
 
-        # Button cards
+        # --- Create Launcher Buttons using our helper method ---
+        # The 'lambda:' creates an anonymous inline function so it only runs when clicked
         self._make_button(content,
             title="Election Setup",
             desc="Register candidates and voters, generate server keys",
@@ -92,20 +100,22 @@ class LauncherApp(ctk.CTk):
             icon="🗳")
 
     def _make_button(self, parent, title, desc, color, hover, command, icon=""):
+        """Helper to create consistent, nice-looking button cards."""
+        # Outer card frame
         btn_frame = ctk.CTkFrame(parent, fg_color=CARD, corner_radius=10,
                                   border_width=1, border_color=BORDER,
-                                  cursor="hand2")
+                                  cursor="hand2")  # Changes mouse to a pointer hand
         btn_frame.pack(fill="x", pady=(0, 10))
 
         inner = ctk.CTkFrame(btn_frame, fg_color="transparent")
         inner.pack(fill="x", padx=16, pady=12)
 
-        # Icon + text on the left
+        # Left section containing icon, title, and description
         left = ctk.CTkFrame(inner, fg_color="transparent")
         left.pack(side="left", fill="x", expand=True)
 
         title_row = ctk.CTkFrame(left, fg_color="transparent")
-        title_row.pack(anchor="w")
+        title_row.pack(anchor="w")  # 'w' means West (left-aligned)
         ctk.CTkLabel(title_row, text=icon,
                      font=ctk.CTkFont(size=16)).pack(side="left", padx=(0, 6))
         ctk.CTkLabel(title_row, text=title,
@@ -116,7 +126,7 @@ class LauncherApp(ctk.CTk):
                      font=ctk.CTkFont(family=FONT, size=11),
                      text_color=TEXT_SUB, anchor="w").pack(anchor="w", pady=(2, 0))
 
-        # Launch button on the right
+        # Right section containing the actual clickable button
         btn = ctk.CTkButton(inner, text="Open", width=70, height=34,
                             corner_radius=8, fg_color=color, hover_color=hover,
                             font=ctk.CTkFont(family=FONT, size=12, weight="bold"),
@@ -124,15 +134,20 @@ class LauncherApp(ctk.CTk):
         btn.pack(side="right", padx=(10, 0))
 
     def _launch(self, script):
-        """Launch a Python script as a separate process."""
+        """Launch a Python script as a separate, independent process."""
+        # os.path.join safely merges folder paths together for any OS (Windows/Mac/Linux)
         script_path = os.path.join(SCRIPT_DIR, script)
+        
+        # Popen spawns a new process without pausing this script
         subprocess.Popen(
+            # sys.executable gets the exact path of the python interpreter running this script
             [sys.executable, script_path],
             cwd=SCRIPT_DIR,
+            # Windows-specific: CREATE_NO_WINDOW prevents a black cmd box from popping up
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
 
 
 if __name__ == "__main__":
     app = LauncherApp()
-    app.mainloop()
+    app.mainloop()  # Start the GUI event loop to keep the window open

@@ -26,7 +26,7 @@ import json
 import os
 import socket
 import struct
-import threading
+import threading  # Used so the server can handle multiple clients at exactly the same time
 
 from crypto_utils import decrypt, int_to_text, verify
 
@@ -38,8 +38,6 @@ RESULTS_FILE = os.path.join(DATA_DIR, "results.json")
 
 HOST = "localhost"
 PORT = 5555
-
-
 
 
 def send_msg(sock: socket.socket, data: dict) -> None:
@@ -59,7 +57,7 @@ def recv_msg(sock: socket.socket) -> dict:
 
 
 def _recv_exact(sock: socket.socket, n: int) -> bytes:
-    """Read exactly n bytes from the socket."""
+    """Read exactly n bytes from the socket to prevent partial packet reading."""
     buf = b""
     while len(buf) < n:
         chunk = sock.recv(n - len(buf))
@@ -70,7 +68,7 @@ def _recv_exact(sock: socket.socket, n: int) -> bytes:
 
 
 def _load_json(path: str, label: str):
-    """Load JSON file or raise a helpful error if missing."""
+    """Helper to safely load JSON files."""
     try:
         with open(path) as fh:
             return json.load(fh)
@@ -78,7 +76,6 @@ def _load_json(path: str, label: str):
         raise FileNotFoundError(
             f"{label} not found at {path}. Run admin_setup.py first."
         ) from exc
-
 
 
 class VotingServer:
@@ -89,22 +86,23 @@ class VotingServer:
         self.port = port
 
         if not os.path.isdir(DATA_DIR):
-            raise FileNotFoundError(
-                f"Data directory not found at {DATA_DIR}. Run admin_setup.py first."
-            )
+            raise FileNotFoundError("Data directory not found. Run admin_setup.py first.")
 
-        # Load persisted data
+        # Load persisted keys and configuration
         keys = _load_json(SERVER_PRIV_FILE, "Server private key file")
         self.server_priv = keys["private_key"]
 
         self.voters = _load_json(VOTERS_FILE, "Voter registry")
         self.candidates = _load_json(CANDIDATES_FILE, "Candidates file")
 
-        # State
+        # Initialize internal election state
         self._round = 1
         self._active_candidates = list(self.candidates)
+        # Sets are highly optimized for 'in' lookups, making duplicate checking very fast
         self.voted_ids: set = set()  
         self._election_closed = False
+        
+        # Load any previously saved state if the server was restarted mid-election
         if os.path.exists(RESULTS_FILE):
             try:
                 prior = _load_json(RESULTS_FILE, "Results file")
@@ -116,8 +114,11 @@ class VotingServer:
                 self._election_closed = prior.get("election_closed", False)
             except (FileNotFoundError, json.JSONDecodeError):
                 pass
-        # Build tally from active candidates, then restore any saved counts
+                
+        # Build the tally (scoreboard) starting at 0 for all active candidates
         self.tally = {c: 0 for c in self._active_candidates}
+        
+        # Restore saved tally counts if available
         if os.path.exists(RESULTS_FILE):
             try:
                 prior = _load_json(RESULTS_FILE, "Results file")
@@ -126,18 +127,25 @@ class VotingServer:
                     self.tally[c] = stored_tally.get(c, 0)
             except (FileNotFoundError, json.JSONDecodeError):
                 pass
+                
+        # A Thread Lock prevents two votes arriving at the exact same millisecond
+        # from corrupting the tally count (a race condition).
         self._lock = threading.Lock()
         self._running = True
         self._server_sock = None
 
-    
 
     def start(self) -> None:
         """Bind and start listening; blocks until the election is closed."""
         self._server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # SO_REUSEADDR prevents the "Address already in use" error if you restart the server rapidly
         self._server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._server_sock.bind((self.host, self.port))
+        
+        # Start listening, allowing a queue of up to 5 pending connections
         self._server_sock.listen(5)
+        
+        # Set a 1-second timeout so the loop can check if self._running is False
         self._server_sock.settimeout(1.0)
         print(f"[*] Voting server listening on {self.host}:{self.port}")
 
@@ -145,7 +153,10 @@ class VotingServer:
             try:
                 conn, addr = self._server_sock.accept()
             except socket.timeout:
-                continue
+                continue  # Loop back and check self._running again
+                
+            # Spawn a new thread exclusively for this client connection
+            # daemon=True means this thread will forcefully die if the main program exits
             t = threading.Thread(target=self._handle_client, args=(conn, addr), daemon=True)
             t.start()
 
@@ -158,14 +169,14 @@ class VotingServer:
         self._running = False
 
     def get_tally(self) -> dict:
-        """Return a copy of the current vote tally."""
-        with self._lock:
+        """Return a copy of the current vote tally safely."""
+        with self._lock:  # Secure the lock while reading to avoid half-updated data
             return dict(self.tally)
 
 
-
     def _handle_client(self, conn: socket.socket, addr) -> None:
-        with conn:
+        """Worker function for the client's dedicated thread."""
+        with conn:  # Automatically closes the connection when the block ends
             try:
                 msg = recv_msg(conn)
             except Exception as exc:
@@ -174,19 +185,19 @@ class VotingServer:
 
             action = msg.get("action", "")
 
+            # --- Admin wants to close the election ---
             if action == "close_election":
                 # Check for tie at the top
                 if self.tally:
                     max_votes = max(self.tally.values())
                     if max_votes == 0:
-                        send_msg(conn, {
-                            "status": "rejected",
-                            "message": "No votes cast yet. Cannot close.",
-                        })
+                        send_msg(conn, {"status": "rejected", "message": "No votes cast yet. Cannot close."})
                         return
+                    
+                    # Find all candidates who have the maximum number of votes
                     tied = [c for c, v in self.tally.items() if v == max_votes]
                     if len(tied) > 1:
-                        # Tie detected — start runoff round
+                        # Tie detected — start runoff round automatically
                         self._initiate_runoff(tied)
                         send_msg(conn, {
                             "status": "runoff",
@@ -195,12 +206,14 @@ class VotingServer:
                             "candidates": tied,
                         })
                         return
+                        
                 # No tie — close the election
                 self._election_closed = True
                 self.stop()
                 send_msg(conn, {"status": "closed", "message": self._results_str()})
                 return
 
+            # --- Admin polling for live dashboard updates ---
             if action == "get_results":
                 with self._lock:
                     tally = dict(self.tally)
@@ -208,14 +221,13 @@ class VotingServer:
                 send_msg(conn, {
                     "status": "ok", "tally": tally,
                     "total_votes": total,
-                    "total_registered": sum(
-                        1 for v in self.voters.values() if v.get("public_key")
-                    ),
+                    "total_registered": sum(1 for v in self.voters.values() if v.get("public_key")),
                     "round": self._round,
                     "active_candidates": list(self._active_candidates),
                 })
                 return
 
+            # --- Voter casting a ballot ---
             if action == "vote":
                 response = self._process_vote(msg)
                 send_msg(conn, response)
@@ -223,11 +235,12 @@ class VotingServer:
 
             send_msg(conn, {"status": "rejected", "message": "Unknown action."})
 
+
     def _process_vote(self, msg: dict) -> dict:
         """Process a vote in two separated phases for relative anonymity.
 
-        Phase 1 (Identity):  verifies WHO is voting — never inspects the ballot.
-        Phase 2 (Counting):  reveals WHAT was voted — never sees voter identity.
+        Phase 1 (Identity Check): verifies WHO is voting — never inspects the ballot.
+        Phase 2 (Counting): reveals WHAT was voted — never sees voter identity.
         """
         voter_name = msg.get("voter_name", "")
         encrypted_vote = msg.get("encrypted_vote")
@@ -235,8 +248,6 @@ class VotingServer:
 
         if not voter_name or encrypted_vote is None or signature is None:
             return {"status": "rejected", "message": "Malformed vote packet."}
-
-
         
         voter_record = self.voters.get(voter_name)
         if voter_record is None:
@@ -246,77 +257,68 @@ class VotingServer:
         if not voter_pub:
             return {"status": "rejected", "message": "Voter has not generated keys yet."}
 
-        
+        # CRYPTO CHECK: Verify the signature to ensure the voter actually sent this,
+        # and that the encrypted vote hasn't been tampered with in transit.
         if not verify(encrypted_vote, signature, voter_pub):
             return {"status": "rejected", "message": "Invalid signature."}
 
-        
+        # Check for double voting
         with self._lock:
             if voter_name in self.voted_ids:
                 return {"status": "rejected", "message": "Voter has already voted."}
+            # Record that this user has voted *before* we count the ballot 
+            # to prevent a rare race condition where a user sends two packets simultaneously
             self.voted_ids.add(voter_name)  
 
-        
-
+        # Pass the ballot to the counting department (which doesn't know WHO the voter is)
         result = self._count_ballot(encrypted_vote)
 
-        
+        # If the ballot was rejected (e.g. invalid candidate), let the voter try again
         if result["status"] != "accepted":
             with self._lock:
                 self.voted_ids.discard(voter_name)
 
         return result
 
+
     def _count_ballot(self, encrypted_vote: int) -> dict:
-        """Decrypt and tally a single ballot WITHOUT any voter identity.
-
-        This method is intentionally isolated from voter identification
-        to uphold relative anonymity: the counting step cannot determine
-        who cast this particular ballot.
-
-        Args:
-            encrypted_vote: RSA-encrypted candidate name (ciphertext int).
-
-        Returns:
-            Response dict with ``status`` and ``message`` keys.
-        """
+        """Decrypt and tally a single ballot WITHOUT any voter identity attached."""
+        
+        # Lock required since we are mutating self.tally
         with self._lock:
-            
             try:
+                # Decrypt the vote using the server's master private key
                 plaintext_int = decrypt(encrypted_vote, self.server_priv)
+                # Convert the raw integer back into text
                 candidate_name = int_to_text(plaintext_int)
             except Exception:
                 return {"status": "rejected", "message": "Decryption failed."}
-
             
             if candidate_name not in self._active_candidates:
                 return {"status": "rejected", "message": "Invalid candidate."}
 
-            
+            # Valid vote -> Increment scoreboard
             self.tally[candidate_name] += 1
             self._persist_state()
 
-            
-            registered_with_keys = sum(
-                1 for v in self.voters.values() if v.get("public_key")
-            )
+            # Optional rule: automatically end the election if 100% of people have voted
+            registered_with_keys = sum(1 for v in self.voters.values() if v.get("public_key"))
             if registered_with_keys > 0 and len(self.voted_ids) >= registered_with_keys:
                 self._try_auto_close()
 
         return {"status": "accepted", "message": "Vote recorded successfully."}
 
-    def _try_auto_close(self):
-        """Auto-close the election when 100% turnout is reached.
 
-        Must be called while self._lock is held.
-        """
+    def _try_auto_close(self):
+        """Auto-close the election when 100% turnout is reached."""
         if not self.tally:
             return
+            
         max_votes = max(self.tally.values())
         tied = [c for c, v in self.tally.items() if v == max_votes]
 
         if len(tied) > 1:
-            
+            # 100% turnout resulted in a tie -> force runoff
             self._round += 1
             self._active_candidates = tied
             self.tally = {c: 0 for c in tied}
@@ -324,11 +326,11 @@ class VotingServer:
             self._persist_state()
             print(f"\n*** AUTO-CLOSE: 100% turnout — tie! Runoff round {self._round} with {tied} ***")
         else:
+            # Clear winner -> shut it down
             self._election_closed = True
             self._persist_state()
             self._print_results()
             print("\n*** AUTO-CLOSE: 100% turnout — election closed ***")
-
 
 
     def _results_str(self) -> str:
@@ -337,6 +339,7 @@ class VotingServer:
         for candidate, count in self.tally.items():
             lines.append(f"  {candidate}: {count} vote(s)")
         if self.tally:
+            # Get the dictionary key (candidate name) that has the maximum value
             winner = max(self.tally, key=self.tally.get)
             lines.append(f"Winner: {winner}")
         return "\n".join(lines)
@@ -345,7 +348,7 @@ class VotingServer:
         print("\n" + self._results_str())
 
     def _persist_state(self) -> None:
-        """Persist tally, voted IDs, round, and active candidates."""
+        """Write current data to disk so election survives a server crash/restart."""
         snapshot = {
             "tally": self.tally,
             "voted_ids": list(self.voted_ids),
@@ -367,7 +370,6 @@ class VotingServer:
         print(f"\n*** RUNOFF: Round {self._round} with {tied_candidates} ***")
 
 
-
 if __name__ == "__main__":
     server = None
     try:
@@ -376,6 +378,7 @@ if __name__ == "__main__":
     except FileNotFoundError as exc:
         print(f"[!] {exc}")
     except KeyboardInterrupt:
+        # Gracefully handle Ctrl+C
         print("\n[!] Server interrupted by user.")
         if server is not None:
             server.stop()

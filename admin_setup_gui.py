@@ -11,7 +11,7 @@ Run:  python admin_setup_gui.py
 
 import json
 import os
-import threading
+import threading  # Required to prevent the GUI from freezing during heavy operations
 import customtkinter as ctk
 
 from crypto_utils import generate_keypair
@@ -44,6 +44,7 @@ FONT = "Segoe UI"
 
 
 class SetupApp(ctk.CTk):
+    """Admin Setup Application Window."""
 
     def __init__(self):
         super().__init__()
@@ -55,12 +56,12 @@ class SetupApp(ctk.CTk):
         self._candidates = []
         self._voters = []
 
+        # Container frame that holds everything. We clear this to change pages.
         self._container = ctk.CTkFrame(self, fg_color="transparent")
         self._container.pack(fill="both", expand=True)
 
         self._show_setup_page()
 
-    
 
     def _header(self, parent):
         bar = ctk.CTkFrame(parent, fg_color=HEADER_BG, height=60, corner_radius=0)
@@ -81,10 +82,10 @@ class SetupApp(ctk.CTk):
         return frame
 
     def _clear(self):
+        """Removes all widgets from the container to allow switching to a new screen."""
         for w in self._container.winfo_children():
             w.destroy()
 
-  
 
     def _show_setup_page(self):
         self._clear()
@@ -93,10 +94,10 @@ class SetupApp(ctk.CTk):
         content = ctk.CTkFrame(self._container, fg_color="transparent")
         content.pack(fill="both", expand=True, padx=28, pady=16)
 
-    
         bottom = ctk.CTkFrame(content, fg_color="transparent")
         bottom.pack(side="bottom", fill="x", pady=(10, 0))
 
+        # StringVar allows the label text to update automatically when the variable changes
         self._status_msg = ctk.StringVar()
         self._status_label = ctk.CTkLabel(bottom, textvariable=self._status_msg,
                      font=ctk.CTkFont(family=FONT, size=11),
@@ -110,14 +111,14 @@ class SetupApp(ctk.CTk):
             command=self._on_create)
         self._create_btn.pack(fill="x")
 
-        # Two-card area takes remaining space
+        # Two-card area takes remaining space (Grid layout used for equal 50/50 vertical split)
         cards_area = ctk.CTkFrame(content, fg_color="transparent")
         cards_area.pack(fill="both", expand=True)
         cards_area.grid_rowconfigure(0, weight=1)
         cards_area.grid_rowconfigure(1, weight=1)
         cards_area.grid_columnconfigure(0, weight=1)
 
-        
+        # Candidates section
         cand_card = self._card(cards_area, "CANDIDATES")
         cand_card.grid(row=0, column=0, sticky="nsew", pady=(0, 5))
 
@@ -129,6 +130,8 @@ class SetupApp(ctk.CTk):
                                          font=ctk.CTkFont(family=FONT, size=12),
                                          border_color=BORDER, fg_color="#F9FAFB")
         self._cand_entry.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        
+        # Bind the 'Enter' key to add the candidate automatically
         self._cand_entry.bind("<Return>", lambda e: self._add_candidate())
 
         ctk.CTkButton(cand_input, text="Add", width=60, height=36, corner_radius=8,
@@ -136,6 +139,7 @@ class SetupApp(ctk.CTk):
                       font=ctk.CTkFont(family=FONT, size=12, weight="bold"),
                       command=self._add_candidate).pack(side="right")
 
+        # Scrollable frame for when there are many candidates
         self._cand_list_frame = ctk.CTkScrollableFrame(
             cand_card, fg_color="transparent",
             scrollbar_button_color=BORDER,
@@ -148,6 +152,7 @@ class SetupApp(ctk.CTk):
                      text_color=ERROR).pack(padx=16, pady=(0, 6))
 
         
+        # Voters section
         voter_card = self._card(cards_area, "VOTERS")
         voter_card.grid(row=1, column=0, sticky="nsew", pady=(5, 0))
 
@@ -184,7 +189,6 @@ class SetupApp(ctk.CTk):
         self._refresh_cand_list()
         self._refresh_voter_list()
 
-    
 
     def _add_candidate(self):
         name = self._cand_entry.get().strip()
@@ -196,7 +200,7 @@ class SetupApp(ctk.CTk):
             self._cand_msg.set(f"'{name}' is already in the list.")
             return
         self._candidates.append(name)
-        self._cand_entry.delete(0, "end")
+        self._cand_entry.delete(0, "end")  # Clear input box
         self._refresh_cand_list()
 
     def _remove_candidate(self, name):
@@ -204,6 +208,7 @@ class SetupApp(ctk.CTk):
         self._refresh_cand_list()
 
     def _refresh_cand_list(self):
+        """Clear and redraw the candidate list UI."""
         for w in self._cand_list_frame.winfo_children():
             w.destroy()
         for name in self._candidates:
@@ -213,6 +218,8 @@ class SetupApp(ctk.CTk):
             ctk.CTkLabel(row, text=name,
                          font=ctk.CTkFont(family=FONT, size=12),
                          text_color=TEXT).pack(side="left", padx=12, pady=6)
+                         
+            # The lambda 'n=name' forces Python to capture the current value of 'name' in the loop
             ctk.CTkButton(row, text="✕", width=28, height=28, corner_radius=6,
                           fg_color="transparent", hover_color="#FECACA",
                           text_color=ERROR,
@@ -254,7 +261,6 @@ class SetupApp(ctk.CTk):
                           command=lambda n=name: self._remove_voter(n)
                           ).pack(side="right", padx=4, pady=4)
 
-   
 
     def _on_create(self):
         if len(self._candidates) < 2:
@@ -269,30 +275,37 @@ class SetupApp(ctk.CTk):
         self._create_btn.configure(state="disabled", text="Generating keys…")
         self._status_msg.set("Generating server RSA keys — this may take a moment…")
         self._status_label.configure(text_color=TEXT_SUB)
+        
+        # update_idletasks forces the GUI to redraw immediately before we freeze it with math
         self.update_idletasks()
 
+        # RSA key generation takes a couple seconds. If we did it on the main thread, 
+        # the entire UI would freeze and say "Not Responding". We put it in a background thread.
         threading.Thread(target=self._do_create, daemon=True).start()
 
     def _do_create(self):
+        """Worker thread for generating keys and saving JSON."""
         try:
             os.makedirs(DATA_DIR, exist_ok=True)
 
-            # Server keys
+            # Generate Server Master Keys
             server_pub, server_priv = generate_keypair(1024)
             with open(SERVER_PUB_FILE, "w") as fh:
                 json.dump({"public_key": server_pub}, fh, indent=2)
             with open(SERVER_PRIV_FILE, "w") as fh:
                 json.dump({"private_key": server_priv}, fh, indent=2)
 
-            # Candidates
+            # Save Candidates
             with open(CANDIDATES_FILE, "w") as fh:
                 json.dump(self._candidates, fh, indent=2)
 
-            # Voters — names only, no keys
+            # Save Voters (just names, no keys yet)
             voters = {name: {} for name in self._voters}
             with open(VOTERS_FILE, "w") as fh:
                 json.dump(voters, fh, indent=2)
 
+            # self.after(0, ...) pushes a function call BACK onto the main GUI thread. 
+            # Tkinter crashes if background threads try to update the screen directly!
             self.after(0, self._show_success)
         except Exception as exc:
             self.after(0, lambda: self._show_error(str(exc)))
@@ -301,7 +314,6 @@ class SetupApp(ctk.CTk):
         self._create_btn.configure(state="normal", text="Create Election")
         self._status_msg.set(f"Error: {msg}")
         self._status_label.configure(text_color=ERROR)
-
 
 
     def _show_success(self):
